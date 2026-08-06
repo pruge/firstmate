@@ -3,7 +3,7 @@ name: feature-author-secondmate
 description: >-
   Agent-only procedure for standing up a persistent feature-authoring secondmate for one project.
   Use when the captain wants a standing conversational partner to draft specs and tickets for a project, as opposed to a one-off investigation or implementation.
-  Owns charter scope wording, retired-tool exclusions, first-charge shape, and the captain-direct-conversation contract; delegates every mechanical secondmate step to secondmate-provisioning.
+  Owns charter scope wording, retired-tool exclusions, authoring discipline, and the captain-direct-conversation contract; delegates every mechanical secondmate step to secondmate-provisioning.
 user-invocable: false
 metadata:
   internal: true
