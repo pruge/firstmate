@@ -674,6 +674,47 @@ test_no_mistakes_origin_remote_allows() {
   pass "no-mistakes worktree with HEAD on origin is torn down (no regression)"
 }
 
+test_untracked_codegraph_index_allows_but_other_untracked_refuses() {
+  local case_dir rc
+  case_dir=$(make_case nm-codegraph)
+  write_meta "$case_dir" no-mistakes ship
+  wt_commit "$case_dir" "shippable work"
+  git -C "$case_dir/wt" push -q origin fm/task-x1
+  git -C "$case_dir/project" fetch -q origin
+  # `codegraph init` leaves a machine-local index whose own .gitignore un-ignores
+  # itself, so git reports the directory as untracked.
+  mkdir -p "$case_dir/wt/.codegraph"
+  printf '%s\n' '*' '!.gitignore' > "$case_dir/wt/.codegraph/.gitignore"
+  : > "$case_dir/wt/.codegraph/graph.db"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "nm-codegraph: teardown should succeed with only an untracked CodeGraph index"
+  ! grep -q REFUSED "$case_dir/stderr" || fail "nm-codegraph: teardown printed a REFUSED line"
+
+  case_dir=$(make_case nm-codegraph-plus-stray)
+  write_meta "$case_dir" no-mistakes ship
+  wt_commit "$case_dir" "shippable work"
+  git -C "$case_dir/wt" push -q origin fm/task-x1
+  git -C "$case_dir/project" fetch -q origin
+  mkdir -p "$case_dir/wt/.codegraph"
+  printf '%s\n' '*' '!.gitignore' > "$case_dir/wt/.codegraph/.gitignore"
+  printf '%s\n' 'unsaved' > "$case_dir/wt/stray-work.txt"
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "nm-codegraph-plus-stray: teardown should still refuse other untracked work"
+  grep -q REFUSED "$case_dir/stderr" \
+    || fail "nm-codegraph-plus-stray: no REFUSED line in stderr"
+  pass "untracked CodeGraph index does not block teardown, other untracked work still does"
+}
+
 test_no_mistakes_truly_unpushed_refuses() {
   local case_dir rc
   case_dir=$(make_case nm-unpushed)
@@ -2504,6 +2545,7 @@ test_teardown_manual_backend_prompts_hand_edit_even_when_tasks_axi_present
 test_local_only_truly_unpushed_refuses
 test_local_only_merged_to_local_main_allows
 test_no_mistakes_origin_remote_allows
+test_untracked_codegraph_index_allows_but_other_untracked_refuses
 test_no_mistakes_truly_unpushed_refuses
 test_local_only_force_overrides_unpushed
 test_teardown_missing_busy_sidecar_completes

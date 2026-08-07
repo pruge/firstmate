@@ -54,6 +54,13 @@
 # it carries the AGENTS.md authoring bar (widely useful knowledge only, pointers
 # over copied detail) and has the crewmate add the fm-ensure-agents-md.sh
 # self-governance section when a touched project AGENTS.md lacks it.
+# Scout and ship briefs both carry a fixed CodeGraph section: run `codegraph init`
+# once in the worktree, self-check with `codegraph status`, and skip CodeGraph
+# entirely when that index is missing, failed, or trivially small because the repo's
+# languages are unsupported (shell and Markdown are unsupported, so firstmate's own
+# repo is expected to produce a near-empty graph). Otherwise prefer `codegraph
+# explore` over grep, run `codegraph sync` after edits, and never commit the
+# machine-local `.codegraph/` index.
 # Refuses to overwrite an existing brief.
 set -eu
 
@@ -298,6 +305,15 @@ EOF
 HERDR_SECTION=${HERDR_SECTION%$'\n'}
 fi
 
+IFS= read -r -d '' CODEGRAPH_SECTION <<'EOF' || true
+**Prefer CodeGraph over grep for exploring code.** If a `codegraph` command exists on PATH, run `codegraph init` once in this worktree before starting work - it builds a local index of this repo that every later `codegraph` call reuses, so init never needs re-running.
+After init, run `codegraph status`. If the index is missing, failed, or has a trivially small node count for a repo this size, this project's languages are not supported by CodeGraph - skip it entirely and use ordinary tools instead. Shell scripts and Markdown are not supported languages, so a shell-and-docs repo (firstmate itself is one) will produce a near-empty graph; that is expected, not an error.
+When the index is real, reach for `codegraph explore "<symbols or question>"` BEFORE grep, find, or opening files to locate or understand code - one call answers most structural questions. Trust what it returns: the source it prints is already read, so do not re-grep to confirm it.
+The index does not follow your edits on its own when you drive CodeGraph from the shell, so run `codegraph sync` after you change files and before the next `codegraph explore`, or read the files you just edited directly. If a response warns that a file is pending, read that file directly too.
+Never commit the index: `.codegraph/` is machine-local and large. If this repo does not already ignore it, leave it untracked and never `git add -A` - do not add the ignore entry as a side change to an unrelated task.
+EOF
+CODEGRAPH_SECTION=${CODEGRAPH_SECTION%$'\n'}
+
 if [ "$KIND" = scout ]; then
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
@@ -312,6 +328,8 @@ You are in a disposable git worktree of $REPO, at a detached HEAD on a clean def
 This is a SCOUT task: the deliverable is a written report, not a PR.
 The worktree is your laboratory - install, run, edit, and make scratch commits freely; all of it is discarded at teardown.
 The report is the only thing that survives, so anything worth keeping must be in it.
+
+$CODEGRAPH_SECTION
 
 # Rules
 1. Never push to any remote and never open a PR.
@@ -425,6 +443,8 @@ The path check is authoritative: \`git rev-parse --git-dir\` and \`git rev-parse
 If the top-level path is the primary checkout or not the worktree you were launched in, STOP - do not branch or commit here - append \`blocked: launched in primary checkout, not an isolated worktree\` to the status file and stop.
 
 1. First action: create your branch: \`git checkout -b fm/$ID\`$SETUP2
+
+$CODEGRAPH_SECTION
 
 # Rules
 $RULE1
