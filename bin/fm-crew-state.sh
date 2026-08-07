@@ -349,12 +349,24 @@ nm_runs_status_for_branch() {  # <branch>
     rest=$(trim "$rest")
     sha=${rest%% *}
     if [ "$br" = "$branch" ]; then
-      # Same code-identity rule as axi status: skip a same-branch row whose
-      # short-sha does not match this worktree (rewritten or advanced tip).
-      if ! nm_coarse_head_matches_worktree "$sha"; then
-        continue
+      # Rows are newest-first, so this is the newest same-branch row and the
+      # only one this crew's run can be - decide and stop here, matching or
+      # not, rather than falling through to an older same-branch row.
+      # Same code-identity rule as axi status: a short-sha that does not
+      # resolve to a real object in this worktree (the pipeline commits gate
+      # fixes into its OWN repo, so an active run's head can advance past
+      # anything the worktree ever has) means "cannot tell", not "not this
+      # crew" - `continue`-ing past it here would let an older, possibly
+      # terminal, same-branch row answer for a run that is actually live.
+      # A resolvable-but-non-ancestor sha (truly rewritten or unrelated
+      # history on a reused branch name) is a genuine non-match, not this
+      # crew's run either - same "unknown" outcome, never an older row's
+      # status.
+      if nm_coarse_head_matches_worktree "$sha"; then
+        printf '%s' "$st"
+      else
+        printf 'unknown'
       fi
-      printf '%s' "$st"
       return 0
     fi
   done <<< "$out"
