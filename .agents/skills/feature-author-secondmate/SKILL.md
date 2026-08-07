@@ -18,10 +18,11 @@ Do not use it for a one-off investigation, a one-off spec, or implementation wor
 
 ## Why this structure works
 
-Hard rule 4 in `AGENTS.md` section 1 says crewmates never address the captain.
+Hard rule 4 in `AGENTS.md` section 1 says crewmates never address the captain, and that all crewmate communication flows through firstmate.
 Read alone, that seems to rule out any secondmate whose job is to ask the captain clarifying questions.
-The rule is one-directional: it stops a crewmate from initiating contact with the captain, not the captain from walking into a crewmate's window.
-`AGENTS.md` section 1 itself treats the captain's direct intervention in a crewmate window as authoritative, reconciled at the next supervision review, not as a violation.
+The rule's first clause is one-directional: it stops a crewmate from initiating contact with the captain, not the captain from walking into a crewmate's window.
+The second clause still stands as the default, so a standing captain-to-secondmate conversation is not the sanctioned routing path; it runs on the rule's third clause, which treats direct captain intervention in a crewmate window as authoritative and reconciled at the next supervision review.
+This pattern therefore depends on that after-the-fact reconciliation, and is never a license for the secondmate to open contact with the captain itself.
 So the structure that works is: the captain opens the secondmate's window and talks with it directly, and firstmate's job is to feed that secondmate verified facts and read back what it produced, never to relay the conversation.
 
 ## Scope the charter narrowly - authoring only
@@ -34,8 +35,9 @@ Authoring the document is the secondmate's job; turning it into code stays with 
 
 ## The charter cannot call captain-only skills
 
-Skills such as `to-spec`, `to-tickets`, `implement`, `wayfinder`, `ask-matt`, and `triage` (and any skill in this family the project uses) are locked with `disable-model-invocation: true`, so the model cannot invoke them itself.
-State plainly in the charter: do not attempt to invoke those skills, and do not ask the captain to invoke them either.
+A project may mark some of its skills captain-only, for example by locking an authoring or dispatch family such as `to-spec`, `to-tickets`, `implement`, `wayfinder`, `ask-matt`, or `triage` so the model cannot invoke them itself.
+Read the project's own skill set to learn which ones it treats that way, rather than assuming any particular name or locking mechanism.
+State plainly in the charter: do not attempt to invoke the skills the project has marked captain-only, and do not ask the captain to invoke them either.
 If the captain needs one of them run, the captain runs it directly in that window; the secondmate's job is to pick up the resulting conversation and turn it into documents.
 
 ## Carry forward retired workflows as an exclusion list
@@ -60,8 +62,8 @@ State these as the secondmate's drafting standards:
 
 When a spec pushes work outside its own scope to another feature, that work must become an actual ticket inside the receiving feature's own spec and ticket set.
 Recording it only in an "impact" or "downstream" note on the sending side and treating that as done lets the work fall between two features.
-This is the reason this skill exists: on 2026-08-07 in jinwooauto, one feature handed off a state-enforcement requirement to another feature, and that requirement never appeared anywhere in the receiving feature's own spec or tickets.
-Shipped as drafted, a farmer stopping a person would have left that person's app still showing as running.
+This is the reason this skill exists, and field experience shows the failure is real: one feature handed off a state-enforcement requirement to another feature, and that requirement never appeared anywhere in the receiving feature's own spec or tickets.
+Shipped as drafted, an operator stopping a worker would have left that worker's app still showing as running.
 Make this a drafting completion check: for every item handed off, the secondmate must be able to name the receiving feature's ticket number that carries it.
 
 ## What firstmate gives the secondmate
@@ -71,10 +73,9 @@ An instruction built on an unverified assumption puts the resulting spec on a fo
 
 ## What the secondmate does not do
 
-- It does not write code; implementation goes to an ordinary crewmate the normal way.
+- It does not write code, and it does not write the authored documents into the project either; both leave through the project's selected delivery path, never as a direct edit inside the secondmate's own `projects/` clone.
+- It drafts in conversation and in its own home, so nothing here relaxes hard rule 1 in `AGENTS.md` section 1: a secondmate never edits project files with its own file tools.
 - It does not make product decisions alone; a decision that belongs to the captain is marked and left for the captain, never invented.
-- It does not implement the downstream impact it just recorded in its own spec.
-- An empty queue is healthy; it does not start its own investigation or audit when idle.
 
 ## How output comes back
 
