@@ -710,6 +710,30 @@ test_scout_and_secondmate_scaffold() {
   pass "fm-brief: scout and secondmate code paths still scaffold well-formed briefs"
 }
 
+test_codegraph_setup_block_present_in_scout_and_ship() {
+  local brief
+
+  FM_HOME="$BRIEF_HOME" "$ROOT/bin/fm-brief.sh" brief-codegraph-scout alpha --scout >/dev/null 2>&1 \
+    || fail "fm-brief.sh scout scaffold exited non-zero"
+  brief="$BRIEF_HOME/data/brief-codegraph-scout/brief.md"
+  assert_present "$brief" "scout brief was not scaffolded"
+  assert_grep "run \`codegraph init\` once in this worktree" "$brief" \
+    "scout brief must instruct the worker to build the CodeGraph index first"
+  assert_grep "reach for \`codegraph explore" "$brief" \
+    "scout brief must tell the worker to prefer CodeGraph over grep, find, or opening files"
+
+  FM_HOME="$BRIEF_HOME" "$ROOT/bin/fm-brief.sh" brief-codegraph-ship alpha --mode no-mistakes >/dev/null 2>&1 \
+    || fail "fm-brief.sh ship scaffold exited non-zero"
+  brief="$BRIEF_HOME/data/brief-codegraph-ship/brief.md"
+  assert_present "$brief" "ship brief was not scaffolded"
+  assert_grep "run \`codegraph init\` once in this worktree" "$brief" \
+    "ship brief must instruct the worker to build the CodeGraph index first"
+  assert_grep "reach for \`codegraph explore" "$brief" \
+    "ship brief must tell the worker to prefer CodeGraph over grep, find, or opening files"
+
+  pass "fm-brief: scout and ship briefs both carry the CodeGraph adoption block"
+}
+
 test_script_parses
 test_no_heredoc_in_command_substitution
 test_help_includes_entire_header
@@ -730,3 +754,4 @@ test_secondmate_directory_paths_are_absolute_and_output_is_stable
 test_pause_verb_override_renders_all_brief_scaffolds
 test_scout_and_secondmate_load_decision_hold_policy
 test_scout_and_secondmate_scaffold
+test_codegraph_setup_block_present_in_scout_and_ship
