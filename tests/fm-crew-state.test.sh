@@ -738,6 +738,73 @@ EOF
   pass "cross-branch attribution picks the branch's most recent row"
 }
 
+# A live gate-fix pipeline commits fixes into ITS OWN repo, so the newest
+# same-branch runs-list row can report a head this worktree has no object
+# for at all (unresolvable, not merely a mismatch). An older, terminal
+# same-branch row must never be matched instead: an unresolvable newest-row
+# head means "cannot tell", not "not this crew". Regression coverage for the
+# 2026-08-08 incident where a live `running` run at an unresolvable head was
+# skipped and an older `failed` row at the worktree's own (matching) head was
+# reported as this crew's current state.
+test_unresolvable_newest_row_head_does_not_fall_through_to_older_row() {
+  reset_fakes
+  local d short; d=$(new_case unresolvable-newest-row)
+  make_repo_on_branch "$d/wt" fm/feat-h
+  short=$(git -C "$d/wt" rev-parse --short=7 HEAD)
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-h.meta" "window=fm:fm-feat-h" "worktree=$d/wt" "kind=ship"
+  # Bare `axi status` answers for a different branch, forcing the coarse
+  # runs-list fallback for this branch.
+  FM_FAKE_AXI_STATUS="$(run_running fm/other-crew)"
+  # Newest same-branch row (deadbee1) is the live pipeline run whose head has
+  # already advanced past anything this worktree has - not a real object here.
+  # The older same-branch row (${short}) matches the worktree's own head and
+  # is genuinely terminal, but must never be the one reported.
+  FM_FAKE_RUNS_LIST="$(cat <<EOF
+  running    fm/other-crew aaaaaaa  2026-08-08 09:00
+  running    fm/feat-h deadbee1  2026-08-08 10:05
+  failed     fm/feat-h ${short}  2026-08-07 20:00
+EOF
+)"
+  local out; out=$(run_crew_state "$d" feat-h)
+  assert_not_contains "$out" "state: failed" "unresolvable live run must never surface an older row's failed state"
+  assert_contains "$out" "state: unknown" "unresolvable newest same-branch head reports unknown, not a stale row"
+  assert_contains "$out" "source: run-step" "still attributed to this branch's run-step lookup"
+  pass "unresolvable newest-row head does not fall through to an older same-branch row"
+}
+
+# The other half of the newest-same-branch-row rule: a row whose sha this
+# worktree CAN resolve but which is not an ancestor of the local head (a
+# multi-stage crew that committed stage-2 work past its finished stage-1 run,
+# or a rewritten tip on a reused branch name) is a genuine non-match. The scan
+# must still stop there, but the coarse path must not CLAIM the run - a
+# provably busy crew has to keep reading working off its pane.
+test_coarse_resolvable_non_matching_head_is_not_claimed_as_this_run() {
+  reset_fakes
+  local d run_short; d=$(new_case coarse-local-advanced)
+  make_repo_on_branch "$d/wt" fm/feat-adv2
+  run_short=$(git -C "$d/wt" rev-parse --short=7 HEAD)
+  git -C "$d/wt" commit -q --allow-empty -m 'local stage-2 work after prior run'
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/adv2.meta" "window=fm:fm-adv2" "worktree=$d/wt" "kind=ship" "harness=claude"
+  FM_FAKE_AXI_STATUS="$(run_running fm/other-crew)"
+  FM_FAKE_RUNS_LIST="$(cat <<EOF
+  running    fm/other-crew aaaaaaa  2026-08-08 09:00
+  failed     fm/feat-adv2 ${run_short}  2026-08-07 20:00
+EOF
+)"
+  FM_FAKE_BUSY=1
+  local gen; gen=$("$ROOT/bin/fm-busy-event.sh" arm "$d/state" adv2)
+  "$ROOT/bin/fm-busy-event.sh" apply "$d/state" adv2 busy --gen "$gen" \
+    --source claude-hook --event user-prompt-submit
+  local out; out=$(run_crew_state "$d" adv2)
+  assert_not_contains "$out" "source: run-step" "a resolvable non-matching head must not be claimed as this crew's run"
+  assert_not_contains "$out" "state: failed" "the superseded row's terminal status must never surface"
+  assert_contains "$out" "state: working" "the live pane signal still answers"
+  assert_contains "$out" "source: pane" "falls back to the pane, as before the newest-row rule"
+  pass "coarse resolvable non-matching head is not claimed, pane still answers"
+}
+
 test_coarse_run_does_not_probe_other_branch_ci_log_for_ready_status() {
   reset_fakes
   local d short; d=$(new_case coarse-ready-other-log)
@@ -1331,6 +1398,8 @@ test_terminal_passed
 test_terminal_failed
 test_cross_branch_attribution_via_runs_list
 test_cross_branch_attribution_picks_most_recent_row
+test_unresolvable_newest_row_head_does_not_fall_through_to_older_row
+test_coarse_resolvable_non_matching_head_is_not_claimed_as_this_run
 test_coarse_run_does_not_probe_other_branch_ci_log_for_ready_status
 test_other_branch_run_ignored
 test_no_run_busy_pane

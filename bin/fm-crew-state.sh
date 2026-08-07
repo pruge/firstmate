@@ -28,6 +28,14 @@
 #      is an ancestor of the run head (pipeline fix commits advanced the run on
 #      the same line of history). Local work that advanced past the run head, or
 #      diverged from it, invalidates attribution.
+#      The coarse runs list is newest-first, so its newest same-branch row is the
+#      only one this crew's run can be: that row decides the answer and the scan
+#      stops there, matching or not. An older same-branch row therefore never
+#      answers. If the newest row's head does not even resolve in this worktree -
+#      an active run's head advances past the head the worktree submitted once the
+#      pipeline commits gate fixes into its own repo - nothing can be concluded,
+#      so the read reports unknown · run-step instead of letting an older,
+#      possibly terminal, row report failed for a run that is still live.
 #      The run-step is AUTHORITATIVE: running/fixing -> working, ci -> working,
 #      awaiting_approval/fix_review -> parked (with gate findings), terminal
 #      passed/checks-passed -> done, failed/cancelled -> failed. EXCEPT: while
@@ -349,12 +357,29 @@ nm_runs_status_for_branch() {  # <branch>
     rest=$(trim "$rest")
     sha=${rest%% *}
     if [ "$br" = "$branch" ]; then
-      # Same code-identity rule as axi status: skip a same-branch row whose
-      # short-sha does not match this worktree (rewritten or advanced tip).
-      if ! nm_coarse_head_matches_worktree "$sha"; then
-        continue
+      # Rows are newest-first, so this is the newest same-branch row and the
+      # only one this crew's run can be - decide and stop here, matching or
+      # not, rather than falling through to an older same-branch row.
+      # Same code-identity rule as axi status, with the two non-matching
+      # cases kept apart:
+      #   - the sha does not resolve to a real object in this worktree (the
+      #     pipeline commits gate fixes into its OWN repo, so an active run's
+      #     head can advance past anything the worktree ever has): "cannot
+      #     tell", reported as `unknown`. `continue`-ing past it here would
+      #     let an older, possibly terminal, same-branch row answer for a run
+      #     that is actually live.
+      #   - the sha resolves but is not an ancestor of the worktree head
+      #     (local work advanced past it, or truly rewritten/unrelated history
+      #     on a reused branch name): a genuine non-match, so this crew has no
+      #     coarse run at all. Report nothing, exactly as before, and let the
+      #     pane/status-log fallbacks answer - claiming it here would surface a
+      #     provably busy crew as `unknown`.
+      # Either way the scan stops: an older row never answers.
+      if nm_coarse_head_matches_worktree "$sha"; then
+        printf '%s' "$st"
+      elif ! nm_coarse_head_resolves_in_worktree "$sha"; then
+        printf 'unknown'
       fi
-      printf '%s' "$st"
       return 0
     fi
   done <<< "$out"
@@ -379,6 +404,15 @@ nm_run_head_matches_worktree() {
 # nm_run_head_matches_worktree (equal, or local is ancestor of run tip).
 nm_coarse_head_matches_worktree() {  # <short-sha>
   fm_nm_head_matches_worktree "$WT" "$1"
+}
+
+# 0 when the coarse row's short sha names a commit this worktree actually has,
+# which separates "this is some other line of history" (resolvable, so a real
+# non-match) from "this worktree cannot see that commit at all" (unresolvable,
+# so nothing can be concluded about whose run it is).
+nm_coarse_head_resolves_in_worktree() {  # <short-sha>
+  [ -n "$1" ] || return 1
+  git -C "$WT" rev-parse --verify --quiet "${1}^{commit}" >/dev/null 2>&1
 }
 
 HAVE_RUN=0
@@ -434,6 +468,10 @@ if [ "$HAVE_RUN" = 1 ]; then
       completed) RUN_STATE="done";  RUN_DETAIL="run completed" ;;
       failed)    RUN_STATE=failed;  RUN_DETAIL="run failed" ;;
       cancelled) RUN_STATE=failed;  RUN_DETAIL="run cancelled" ;;
+      # `unknown` is this reader's own sentinel for "the newest same-branch
+      # row's head is not resolvable here", never a word the runs list emits -
+      # keep it distinguishable from a genuinely unrecognized status word.
+      unknown)   RUN_STATE=unknown; RUN_DETAIL="run head not resolvable in worktree" ;;
       *)         RUN_STATE=unknown; RUN_DETAIL="runs list status: $COARSE_STATUS" ;;
     esac
   else
