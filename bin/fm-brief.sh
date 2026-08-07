@@ -298,11 +298,11 @@ EOF
 HERDR_SECTION=${HERDR_SECTION%$'\n'}
 fi
 
-# shellcheck disable=SC2016  # single-quoted heredoc: backticked commands must reach the reading agent verbatim, not expand at scaffold time.
 IFS= read -r -d '' CODEGRAPH_SECTION <<'EOF' || true
-**Prefer CodeGraph over grep for exploring code.** If a `codegraph` command exists on PATH, run `codegraph init` once in this worktree before starting work - it builds a local index of this repo and auto-syncs on every later file change, so it never needs re-running.
+**Prefer CodeGraph over grep for exploring code.** If a `codegraph` command exists on PATH, run `codegraph init` once in this worktree before starting work - it builds a local index of this repo that every later `codegraph` call reuses, so init never needs re-running.
 After init, run `codegraph status`. If the index is missing, failed, or has a trivially small node count for a repo this size, this project's languages are not supported by CodeGraph - skip it entirely and use ordinary tools instead. Shell scripts and Markdown are not supported languages, so a shell-and-docs repo (firstmate itself is one) will produce a near-empty graph; that is expected, not an error.
-When the index is real, reach for `codegraph explore "<symbols or question>"` BEFORE grep, find, or opening files to locate or understand code - one call answers most structural questions. Trust what it returns: the source it prints is already read, so do not re-grep to confirm it. After you edit a file, the graph resyncs within a couple of seconds; if a response warns that a file is pending, read that file directly.
+When the index is real, reach for `codegraph explore "<symbols or question>"` BEFORE grep, find, or opening files to locate or understand code - one call answers most structural questions. Trust what it returns: the source it prints is already read, so do not re-grep to confirm it.
+The index does not follow your edits on its own when you drive CodeGraph from the shell, so run `codegraph sync` after you change files and before the next `codegraph explore`, or read the files you just edited directly. If a response warns that a file is pending, read that file directly too.
 Never commit the index: `.codegraph/` is machine-local and large. If this repo does not already ignore it, leave it untracked and never `git add -A` - do not add the ignore entry as a side change to an unrelated task.
 EOF
 CODEGRAPH_SECTION=${CODEGRAPH_SECTION%$'\n'}
