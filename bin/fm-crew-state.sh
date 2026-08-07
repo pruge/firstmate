@@ -28,6 +28,14 @@
 #      is an ancestor of the run head (pipeline fix commits advanced the run on
 #      the same line of history). Local work that advanced past the run head, or
 #      diverged from it, invalidates attribution.
+#      The coarse runs list is newest-first, so its newest same-branch row is the
+#      only one this crew's run can be: that row decides the answer and the scan
+#      stops there, matching or not. An older same-branch row therefore never
+#      answers. If the newest row's head does not even resolve in this worktree -
+#      an active run's head advances past the head the worktree submitted once the
+#      pipeline commits gate fixes into its own repo - nothing can be concluded,
+#      so the read reports unknown · run-step instead of letting an older,
+#      possibly terminal, row report failed for a run that is still live.
 #      The run-step is AUTHORITATIVE: running/fixing -> working, ci -> working,
 #      awaiting_approval/fix_review -> parked (with gate findings), terminal
 #      passed/checks-passed -> done, failed/cancelled -> failed. EXCEPT: while
