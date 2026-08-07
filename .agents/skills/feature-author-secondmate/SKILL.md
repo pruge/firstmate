@@ -42,9 +42,9 @@ If the captain needs one of them run, the captain runs it directly in that windo
 
 ## Carry forward retired workflows as an exclusion list
 
-Captain preferences propagate to `data/captain-shared.md` under the `secondmate-provisioning` contract.
+Captain preferences propagate to `data/captain-shared.md` under the `secondmate-provisioning` contract, and that propagated file is the live list: it re-converges on every sync, so a retirement the captain declares after seeding arrives there and nowhere else.
 State the retirement rule generally in the charter: a workflow or skill the captain has retired may still be installed on the machine, and the secondmate has no history of that retirement, so it will reach for it naturally unless told not to.
-Naming every retired command by name in the charter, at seeding time, is the required setup check - not a one-time note but a standing exclusion list the charter carries.
+Naming every already-retired command in the charter, at seeding time, is the required setup check, and the charter must point that list at `data/captain-shared.md` as the standing authority to recheck, so a list written once is never read as the complete one.
 
 ## Authoring discipline (charter body)
 
@@ -74,7 +74,7 @@ An instruction built on an unverified assumption puts the resulting spec on a fo
 ## What the secondmate does not do
 
 - It does not write code, and it does not write the authored documents into the project either; both leave through the project's selected delivery path, never as a direct edit inside the secondmate's own `projects/` clone.
-- It drafts in conversation and in its own home, so nothing here relaxes hard rule 1 in `AGENTS.md` section 1: a secondmate never edits project files with its own file tools.
+- It drafts in conversation and in its own home; hard rule 1 in `AGENTS.md` section 1 governs its project writes unchanged, and nothing here relaxes or widens it.
 - It does not make product decisions alone; a decision that belongs to the captain is marked and left for the captain, never invented.
 
 ## How output comes back
