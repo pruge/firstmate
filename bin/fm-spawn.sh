@@ -217,6 +217,8 @@ SUB_HOME_MARKER=".fm-secondmate-home"
 . "$SCRIPT_DIR/fm-trace-context-lib.sh"
 # shellcheck source=bin/fm-remote-readiness-lib.sh
 . "$SCRIPT_DIR/fm-remote-readiness-lib.sh"
+# shellcheck source=bin/fm-worktree-runtime-lib.sh
+. "$SCRIPT_DIR/fm-worktree-runtime-lib.sh"
 # Fail closed before any fleet mutation: a no-mistakes gate agent must never spawn
 # a direct report (see bin/fm-gate-refuse-lib.sh).
 fm_refuse_if_gate_agent
@@ -1866,6 +1868,15 @@ if [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   fi
 
   validate_spawn_worktree "treehouse get" "$T"
+fi
+
+# Give the worktree what it needs to actually run the app - a dev port pair,
+# a private database copy, and the gitignored dev env files - before the
+# worker's first turn. Ship and scout only: a secondmate's WT is its own
+# firstmate home, not a project checkout, and orca already validated WT above
+# in the same case branch this block follows.
+if [ "$KIND" != secondmate ]; then
+  fm_worktree_runtime_provision "$WT" "$PROJ_ABS" "$STATE" "$ID"
 fi
 
 # Per-task temp root: /tmp/fm-<id>/ with Go's build temp nested at gotmp/. Go won't
