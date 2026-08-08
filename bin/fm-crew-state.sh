@@ -30,12 +30,14 @@
 #      diverged from it, invalidates attribution.
 #      The coarse runs list is newest-first, so its newest same-branch row is the
 #      only one this crew's run can be: that row decides the answer and the scan
-#      stops there, matching or not. An older same-branch row therefore never
-#      answers. If the newest row's head does not even resolve in this worktree -
-#      an active run's head advances past the head the worktree submitted once the
-#      pipeline commits gate fixes into its own repo - nothing can be concluded,
-#      so the read reports unknown · run-step instead of letting an older,
-#      possibly terminal, row report failed for a run that is still live.
+#      stops there, matching or not - an older same-branch row never answers. If
+#      the newest row's head does not even resolve in this worktree - an active
+#      run's head advances past the head the worktree submitted once the
+#      pipeline commits gate fixes into its own repo - nothing can be claimed as
+#      this crew's run, so the coarse lookup reports nothing rather than
+#      `unknown · run-step`: claiming it here would set HAVE_RUN and stop the
+#      caller from ever reaching the pane fallback below, which is the only
+#      source that can actually tell whether the pipeline is still alive.
 #      The run-step is AUTHORITATIVE: running/fixing -> working, ci -> working,
 #      awaiting_approval/fix_review -> parked (with gate findings), terminal
 #      passed/checks-passed -> done, failed/cancelled -> failed. EXCEPT: while
@@ -362,23 +364,28 @@ nm_runs_status_for_branch() {  # <branch>
       # not, rather than falling through to an older same-branch row.
       # Same code-identity rule as axi status, with the two non-matching
       # cases kept apart:
-      #   - the sha does not resolve to a real object in this worktree (the
-      #     pipeline commits gate fixes into its OWN repo, so an active run's
-      #     head can advance past anything the worktree ever has): "cannot
-      #     tell", reported as `unknown`. `continue`-ing past it here would
-      #     let an older, possibly terminal, same-branch row answer for a run
-      #     that is actually live.
-      #   - the sha resolves but is not an ancestor of the worktree head
-      #     (local work advanced past it, or truly rewritten/unrelated history
-      #     on a reused branch name): a genuine non-match, so this crew has no
-      #     coarse run at all. Report nothing, exactly as before, and let the
-      #     pane/status-log fallbacks answer - claiming it here would surface a
-      #     provably busy crew as `unknown`.
-      # Either way the scan stops: an older row never answers.
+      #   - the sha resolves in this worktree but is not an ancestor of the
+      #     worktree head (local work advanced past it, or truly
+      #     rewritten/unrelated history on a reused branch name): a genuine
+      #     non-match, so this crew has no coarse run at all. Report nothing
+      #     and let the pane/status-log fallbacks answer - claiming it here
+      #     would surface a provably busy crew as `unknown`.
+      #   - the sha does not resolve to a real object in this worktree at all.
+      #     The pipeline commits gate fixes into its OWN repo, so an active
+      #     run's head routinely advances past anything the worktree can ever
+      #     resolve - this is the NORMAL state during fix rounds, not
+      #     evidence the crew is idle. Reporting `unknown` here would set
+      #     HAVE_RUN=1 and stop the caller from ever reaching the pane
+      #     fallback, silently disabling it for exactly the crews it exists
+      #     to answer for. Report nothing here too, so the caller falls
+      #     through to the pane, which can actually tell whether the pipeline
+      #     is alive.
+      # Either way the scan stops: an older row never answers, and neither
+      # non-match case claims the run.
       if nm_coarse_head_matches_worktree "$sha"; then
         printf '%s' "$st"
-      elif ! nm_coarse_head_resolves_in_worktree "$sha"; then
-        printf 'unknown'
+      elif nm_coarse_head_resolves_in_worktree "$sha"; then
+        : # resolves but is not an ancestor - a genuine non-match, fall through
       fi
       return 0
     fi
@@ -468,10 +475,6 @@ if [ "$HAVE_RUN" = 1 ]; then
       completed) RUN_STATE="done";  RUN_DETAIL="run completed" ;;
       failed)    RUN_STATE=failed;  RUN_DETAIL="run failed" ;;
       cancelled) RUN_STATE=failed;  RUN_DETAIL="run cancelled" ;;
-      # `unknown` is this reader's own sentinel for "the newest same-branch
-      # row's head is not resolvable here", never a word the runs list emits -
-      # keep it distinguishable from a genuinely unrecognized status word.
-      unknown)   RUN_STATE=unknown; RUN_DETAIL="run head not resolvable in worktree" ;;
       *)         RUN_STATE=unknown; RUN_DETAIL="runs list status: $COARSE_STATUS" ;;
     esac
   else
