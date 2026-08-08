@@ -112,6 +112,14 @@ fm_worktree_runtime_copy_env_files() {  # <worktree-web> <project-web>
 # contract at all, so this is a silent no-op for it - jinwooauto's own
 # scripts/ports.sh falls back to .ports.main whenever .ports.worktree is
 # absent, so leaving it unwritten is always safe, never a broken state.
+#
+# The scan-then-write below is a critical section: two tasks for the same
+# project can be spawned concurrently (fm-spawn.sh only serializes same-id
+# spawns via its per-task SPAWN_TASK_LOCK), and the calling task's own
+# state/<id>.meta is not written until well after this function returns, so
+# an unlocked scan of *.meta could race another concurrent provision call and
+# hand out the same pair to both. A per-project lock directory under
+# state_dir (independent of any single task's meta) closes that window.
 fm_worktree_runtime_assign_ports() {  # <worktree-root> <project-root> <state-dir> <task-id>
   local wt=$1 proj=$2 state_dir=$3 id=$4
   local wt_web="$wt/$FM_WORKTREE_RUNTIME_WEB_REL" proj_web="$proj/$FM_WORKTREE_RUNTIME_WEB_REL"
@@ -122,6 +130,15 @@ fm_worktree_runtime_assign_ports() {  # <worktree-root> <project-root> <state-di
   if [ -z "$backend_main" ] || [ -z "$frontend_main" ]; then
     echo "warning: fm-spawn: $main_file has no usable BACKEND_PORT/FRONTEND_PORT; skipping port assignment for $id" >&2
     return 0
+  fi
+
+  local proj_key port_lock
+  proj_key=$(printf '%s' "$proj" | cksum | cut -d' ' -f1)
+  port_lock="$state_dir/.ports-$proj_key.lock"
+  if declare -F fm_lock_acquire_wait >/dev/null 2>&1 && declare -F fm_lock_release >/dev/null 2>&1; then
+    fm_lock_acquire_wait "$port_lock"
+    # shellcheck disable=SC2064 # port_lock is fixed for this call; expand it now.
+    trap "fm_lock_release '$port_lock' || true" RETURN
   fi
 
   local used_backend=" $backend_main " used_frontend=" $frontend_main "
