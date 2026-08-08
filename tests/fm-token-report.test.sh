@@ -122,6 +122,20 @@ if command -v sqlite3 >/dev/null 2>&1; then
   echo "$OUT" | jq -e '.weights.output == 5 and .weights.cache_read == 0.1' >/dev/null \
     || fail "weights not disclosed in JSON output: $OUT"
 
+  # Cost per turn: own has one in-window turn (cache_read 3000), crews have
+  # three across both worktrees (300 + 70 + 30 = 400).
+  echo "$OUT" | jq -e '.own.turns == 1 and .own.cache_read_per_turn == 3000' >/dev/null \
+    || fail "own cost-per-turn wrong: $OUT"
+  echo "$OUT" | jq -e '.crews.turns == 3 and (.crews.cache_read_per_turn - 133.33 | fabs) < 0.01' >/dev/null \
+    || fail "crew cost-per-turn wrong: $OUT"
+
+  # Cost per validation run: run1's three in-window rows (700+70+30) sum to
+  # 800 total, 770 with the test step excluded; only one run in window.
+  echo "$OUT" | jq -e '.pipeline_runs.present == true and .pipeline_runs.runs == 1 and .pipeline_runs.median_cache_read == 800 and .pipeline_runs.median_cache_read_excl_test_ci == 770' >/dev/null \
+    || fail "cost-per-validation-run wrong: $OUT"
+
+  pass "cost per turn (own/crews) and cost per validation run"
+
   # Weighted share is a stated heuristic, not free-floating: recompute it from
   # the raw totals with the same disclosed weights and require exact agreement.
   echo "$OUT" | jq -e '
@@ -160,7 +174,74 @@ RC=$?
 [ "$RC" -eq 0 ] || fail "absent sources should exit 0, got $RC"
 echo "$OUT" | jq -e '.own.input_tokens == 0 and .crews.input_tokens == 0 and .pipeline.present == false and .pipeline.input_tokens == 0' >/dev/null \
   || fail "absent sources should report zero, not fail: $OUT"
-pass "missing crews and missing pipeline database both report zero without failing"
+# Absence of turn or run data must read as "no data" (null), never a silent 0.
+echo "$OUT" | jq -e '.own.turns == 0 and .own.cache_read_per_turn == null and .crews.turns == 0 and .crews.cache_read_per_turn == null' >/dev/null \
+  || fail "absent turn data should report null cache_read_per_turn, not zero: $OUT"
+echo "$OUT" | jq -e '.pipeline_runs.present == false and .pipeline_runs.runs == 0 and .pipeline_runs.median_cache_read == null and .pipeline_runs.median_cache_read_excl_test_ci == null' >/dev/null \
+  || fail "absent pipeline database should report null validation-run medians, not zero: $OUT"
+echo "$OUT" | jq -e '.sessions.own == [] and .sessions.crews == []' >/dev/null \
+  || fail "absent sources should report empty session-growth lists: $OUT"
+pass "missing crews and missing pipeline database both report zero/null without failing"
+
+# --- session growth: turns, first/last context, growth rate, compaction ------
+
+SESS_BASE="$TMP_ROOT/sessions"
+own_sess_dir="$SESS_BASE/claude-projects/own-encoded-root"
+crew_sess_dir="$SESS_BASE/claude-projects/-Users-x--treehouse-proj-ccc-1-proj"
+mkdir -p "$own_sess_dir" "$crew_sess_dir"
+
+# Own session: 20 turns, monotonically increasing context - never compacted.
+# first=1000, last=2900, rate=(2900-1000)/20=95.
+{
+  for i in $(seq 0 19); do
+    usage_line 1 1 $((1000 + i * 100)) 1 "$RECENT_ISO"
+  done
+} > "$own_sess_dir/sess-own.jsonl"
+
+# Own session: only 5 turns - below SESSION_MIN_TURNS, must be excluded.
+{
+  for i in $(seq 0 4); do
+    usage_line 1 1 $((5000 + i * 100)) 1 "$RECENT_ISO"
+  done
+} > "$own_sess_dir/sess-own-short.jsonl"
+
+# Crew session: 20 turns, rises 1000..1900 then drops to 300 (compaction) and
+# rises again to 1200. first=1000, last=1200, rate=(1200-1000)/20=10, compacted.
+{
+  for i in $(seq 0 9); do
+    usage_line 1 1 $((1000 + i * 100)) 1 "$RECENT_ISO"
+  done
+  for i in $(seq 0 9); do
+    usage_line 1 1 $((300 + i * 100)) 1 "$RECENT_ISO"
+  done
+} > "$crew_sess_dir/sess-crew.jsonl"
+
+SESS_OUT=$(FM_TOKEN_REPORT_OWN_ROOT="own-encoded-root" \
+           FM_TOKEN_REPORT_PROJECTS_DIR="$SESS_BASE/claude-projects" \
+           FM_TOKEN_REPORT_NM_DB="$SESS_BASE/no-such.sqlite" \
+           bash "$SCRIPT" --since 1h --json) || fail "session-fixture run exited nonzero"
+
+echo "$SESS_OUT" | jq -e '(.sessions.own | length) == 1' >/dev/null \
+  || fail "short session (< min turns) should be excluded from session growth: $SESS_OUT"
+echo "$SESS_OUT" | jq -e '.sessions.own[0].turns == 20 and .sessions.own[0].first_context == 1000 and .sessions.own[0].last_context == 2900 and .sessions.own[0].growth_per_turn == 95 and .sessions.own[0].compacted == false' >/dev/null \
+  || fail "own session growth stats wrong: $SESS_OUT"
+
+echo "$SESS_OUT" | jq -e '(.sessions.crews | length) == 1' >/dev/null \
+  || fail "expected exactly one crew session in growth breakdown: $SESS_OUT"
+echo "$SESS_OUT" | jq -e '.sessions.crews[0].worktree == "-Users-x--treehouse-proj-ccc-1-proj" and .sessions.crews[0].turns == 20 and .sessions.crews[0].first_context == 1000 and .sessions.crews[0].last_context == 1200 and .sessions.crews[0].growth_per_turn == 10 and .sessions.crews[0].compacted == true' >/dev/null \
+  || fail "crew session growth/compaction detection wrong: $SESS_OUT"
+
+pass "per-session turn count, context growth rate, and compaction detection"
+
+SESS_TABLE=$(FM_TOKEN_REPORT_OWN_ROOT="own-encoded-root" \
+             FM_TOKEN_REPORT_PROJECTS_DIR="$SESS_BASE/claude-projects" \
+             FM_TOKEN_REPORT_NM_DB="$SESS_BASE/no-such.sqlite" \
+             bash "$SCRIPT" --since 1h) || fail "session-fixture table run exited nonzero"
+case "$SESS_TABLE" in
+  *"session growth"*) ;;
+  *) fail "table output missing session growth section: $SESS_TABLE" ;;
+esac
+pass "table output includes the session growth section"
 
 # --- argument handling ---------------------------------------------------------
 
