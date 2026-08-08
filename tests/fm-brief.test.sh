@@ -746,10 +746,10 @@ test_codegraph_section_overrides_global_skip_rule_and_scopes_index() {
   assert_present "$brief" "ship brief was not scaffolded"
   assert_grep "overrides" "$brief" \
     "CodeGraph section must state it overrides the general no-index-skip-it rule"
-  assert_grep "this brief" "$brief" \
+  assert_grep "is this brief deciding it" "$brief" \
     "CodeGraph section must say the deferred user's-decision about indexing IS this brief"
-  assert_no_grep "takes minutes" "$brief" \
-    "CodeGraph section must not invite the wrong assumption that init is slow"
+  assert_grep "single-digit seconds even on a large repo, not minutes" "$brief" \
+    "CodeGraph section must correct the wrong assumption that init is slow"
   assert_grep "subtree" "$brief" \
     "CodeGraph section must tell the crew to scope the index to the subtree it is working on"
   pass "fm-brief: CodeGraph section overrides the global skip rule and scopes the index"
@@ -778,8 +778,6 @@ test_ship_dod_requires_browser_verification_with_precondition() {
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   assert_present "$brief" "ship brief was not scaffolded"
-  assert_grep "chrome-devtools-axi" "$brief" \
-    "ship brief must point visible-change verification at chrome-devtools-axi"
   assert_grep "unless this worktree cannot run the app" "$brief" \
     "ship brief must state the worktree precondition explicitly rather than assuming the app runs"
   assert_grep "reproduce it in a real browser with chrome-devtools-axi before your fix and confirm it is gone after" "$brief" \
