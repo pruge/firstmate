@@ -125,8 +125,9 @@
 #   Right after that worktree is validated, a ship/scout spawn matches its local
 #   CodeGraph index to the checked-out code (fm_spawn_codegraph_sync: init when
 #   no `.codegraph/` exists there yet, sync otherwise) before the brief is sent.
-#   This is a best-effort optimization, never a spawn gate: no codegraph binary,
-#   a failing init/sync, or a bounded timeout all warn and let the spawn continue.
+#   A failing init/sync or a bounded timeout is a best-effort optimization
+#   shortfall: it warns and lets the spawn continue. codegraph missing entirely
+#   is not: the spawn is refused until it is installed.
 # Batch dispatch: pass one or more `id=repo` pairs instead of a single <id> <project>, e.g.
 #     fm-spawn.sh fix-a-k3=projects/foo add-b-q7=projects/bar [--scout]
 #   Each pair re-execs this script in single-task mode, so the single path stays the only
@@ -1927,7 +1928,12 @@ if [ "$KIND" != secondmate ]; then
     echo "error: fm-spawn: worktree runtime provisioning failed for $ID" >&2
     exit 1
   }
-  fm_spawn_codegraph_sync "$WT"
+  cg_status=0
+  fm_spawn_codegraph_sync "$WT" || cg_status=$?
+  if [ "$cg_status" -eq 2 ]; then
+    echo "error: fm-spawn: refusing to spawn $ID without codegraph installed" >&2
+    exit 1
+  fi
 fi
 
 # Per-task temp root: /tmp/fm-<id>/ with Go's build temp nested at gotmp/. Go won't

@@ -6,12 +6,17 @@
 # index sat there before, stale or not. A stale index does not error on
 # query - it just answers with outdated symbols as if they were current.
 #
-# Optimization only, never a spawn gate: no codegraph binary, a failing
-# init/sync, or the bounded timeout below all fall through to a warning and
-# let the caller continue with no synced index.
+# A failing init/sync or the bounded timeout below is an optimization
+# shortfall, not a spawn gate: both fall through to a warning and let the
+# caller continue with no synced index. codegraph missing entirely is
+# different - the caller must refuse the spawn on it (return 2) rather than
+# launch a worker with no index at all.
 fm_spawn_codegraph_sync() {  # <worktree>
   local wt=$1 timeout_secs=${FM_SPAWN_CODEGRAPH_TIMEOUT:-60} have_timeout=none cmd=init out status=0
-  command -v codegraph >/dev/null 2>&1 || return 0
+  if ! command -v codegraph >/dev/null 2>&1; then
+    echo "error: codegraph is not installed; install it with: npm install -g @colbymchenry/codegraph" >&2
+    return 2
+  fi
   [ -d "$wt/.codegraph" ] && cmd=sync
   if command -v timeout >/dev/null 2>&1; then have_timeout=timeout
   elif command -v gtimeout >/dev/null 2>&1; then have_timeout=gtimeout

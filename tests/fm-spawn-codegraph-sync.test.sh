@@ -8,9 +8,10 @@
 # still carries whatever index sat there before - stale or not. A stale index
 # does not error, it just answers with outdated symbols as if they were
 # current, so the index must be matched to the code before the worker's first
-# turn. This must never gate the spawn itself: a missing codegraph binary, a
-# failing init/sync, or a hang past the bounded timeout must all fall through
-# to a warning, never a blocked launch.
+# turn. A failing init/sync or a hang past the bounded timeout must never gate
+# the spawn - both fall through to a warning, never a blocked launch. A
+# missing codegraph binary is different: the spawn is refused until it is
+# installed.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -77,7 +78,7 @@ test_lib_syncs_a_worktree_with_an_existing_index() {
   pass "a worktree with an existing index is sync'd, matching it to current code"
 }
 
-test_lib_is_a_silent_noop_with_no_codegraph_binary() {
+test_lib_refuses_with_no_codegraph_binary() {
   local case_dir wt out status empty_path
   case_dir="$TMP_ROOT/lib-missing-binary"
   wt="$case_dir/wt"
@@ -86,9 +87,9 @@ test_lib_is_a_silent_noop_with_no_codegraph_binary() {
 
   out=$(env PATH="$empty_path" "$BASH_BIN" -c ". '$LIB'; fm_spawn_codegraph_sync '$wt'" 2>&1)
   status=$?
-  expect_code 0 "$status" "a missing codegraph binary must never fail the caller"
-  [ -z "$out" ] || fail "a missing codegraph binary should produce no warning output, got: $out"
-  pass "no codegraph on PATH is a silent no-op, never a failure"
+  expect_code 2 "$status" "a missing codegraph binary must fail the caller with the binary-missing code"
+  assert_contains "$out" "npm install -g @colbymchenry/codegraph" "a missing codegraph binary should print the actionable install command"
+  pass "no codegraph on PATH refuses with an actionable install error, never a silent no-op"
 }
 
 test_lib_warns_but_succeeds_when_codegraph_fails() {
@@ -183,14 +184,29 @@ $1
 EOF
 }
 
+# path_without_real_codegraph strips any PATH entry that resolves a real
+# `codegraph` binary. Hosts that have codegraph installed globally (e.g. for
+# interactive use) would otherwise let the case-absent scenario below find
+# that real binary through the inherited $PATH tail, defeating the point of
+# removing codegraph from the fake bin dir.
+path_without_real_codegraph() {
+  local dir sanitized=
+  local IFS=:
+  for dir in $PATH; do
+    [ -x "$dir/codegraph" ] && continue
+    sanitized="$sanitized:$dir"
+  done
+  printf '%s\n' "${sanitized#:}"
+}
+
 run_case_spawn() {
-  local id=$1
+  local id=$1 path_base=${CGPATH_BASE:-$PATH}
   FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" \
     FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
     FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
     FM_SPAWN_NO_GUARD=1 TMUX="fake,1,0" \
     FM_FAKE_PANE_PATH="$WT_DIR" \
-    CODEGRAPH_LOG="$CGLOG" PATH="$FAKEBIN_DIR:$PATH" \
+    CODEGRAPH_LOG="$CGLOG" PATH="$FAKEBIN_DIR:$path_base" \
     "$SPAWN" "$id" "$PROJ_DIR" --mode no-mistakes --yolo off 2>&1
 }
 
@@ -222,21 +238,22 @@ test_spawn_syncs_an_already_indexed_task_worktree() {
   pass "spawning into an already-indexed task worktree syncs it to current code"
 }
 
-# The load-bearing regression: an entirely absent codegraph tool must never
-# stop a spawn. Reproduces by omitting the fake codegraph from PATH.
-test_spawn_succeeds_without_codegraph_installed() {
+# The load-bearing regression: an entirely absent codegraph tool must refuse
+# the spawn with an actionable error, never launch a worker with no index at
+# all. Reproduces by omitting the fake codegraph from PATH.
+test_spawn_refuses_without_codegraph_installed() {
   local rec id out status
   id=cgspawn-absent-z3
   rec=$(make_spawn_case spawn-absent "$id")
   read_spawn_record "$rec"
   rm -f "$FAKEBIN_DIR/codegraph"
 
-  out=$(run_case_spawn "$id")
+  out=$(CGPATH_BASE=$(path_without_real_codegraph) run_case_spawn "$id")
   status=$?
-  expect_code 0 "$status" "spawn must succeed even with no codegraph binary on PATH"
-  assert_contains "$out" "spawned $id" "spawn did not report success without codegraph installed"
-  assert_not_contains "$out" "warning: codegraph" "an absent codegraph tool should produce no codegraph warning"
-  pass "spawn succeeds unaffected when codegraph is not installed at all"
+  [ "$status" -ne 0 ] || fail "spawn should refuse to launch with no codegraph binary on PATH"
+  assert_not_contains "$out" "spawned $id" "spawn should not report success without codegraph installed"
+  assert_contains "$out" "npm install -g @colbymchenry/codegraph" "a refused spawn should print the actionable install command"
+  pass "spawn refuses when codegraph is not installed at all"
 }
 
 # The other load-bearing regression: codegraph EXISTS but its call fails - the
@@ -258,12 +275,12 @@ test_spawn_succeeds_with_a_visible_warning_when_codegraph_fails() {
 
 test_lib_inits_a_worktree_with_no_existing_index
 test_lib_syncs_a_worktree_with_an_existing_index
-test_lib_is_a_silent_noop_with_no_codegraph_binary
+test_lib_refuses_with_no_codegraph_binary
 test_lib_warns_but_succeeds_when_codegraph_fails
 test_lib_bounds_a_hanging_codegraph_and_still_succeeds
 test_spawn_inits_a_fresh_task_worktree
 test_spawn_syncs_an_already_indexed_task_worktree
-test_spawn_succeeds_without_codegraph_installed
+test_spawn_refuses_without_codegraph_installed
 test_spawn_succeeds_with_a_visible_warning_when_codegraph_fails
 
 echo "# all fm-spawn-codegraph-sync tests passed"
