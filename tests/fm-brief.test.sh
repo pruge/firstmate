@@ -803,6 +803,47 @@ test_ship_dod_requires_browser_verification_with_precondition() {
   pass "fm-brief: ship brief requires browser verification of visible changes, with its precondition stated"
 }
 
+test_status_protocol_covers_captain_check_and_captain_direct_work() {
+  local home id brief
+  home="$TMP_ROOT/captain-standing-cases-home"
+  mkdir -p "$home/data"
+
+  id="brief-captain-cases-ship"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "ship brief was not scaffolded"
+  # shellcheck disable=SC2016 # Literal backticks and braces must remain unexpanded.
+  assert_grep 'append `paused: awaiting captain confirmation - {what}` and stop' "$brief" \
+    "ship brief must instruct pausing for a specifically-named captain confirmation wait"
+  # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
+  assert_grep 'use `working:` for' "$brief" \
+    "ship brief must require working: instead of paused: while a gate can still surface a decision"
+  # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
+  assert_grep '`paused: captain working directly` once' "$brief" \
+    "ship brief must instruct a single pause line when the captain takes over the pane"
+  assert_grep "then go quiet on status until firstmate tells" "$brief" \
+    "ship brief must require going quiet on status while the captain works directly"
+  assert_grep "send one batched report covering everything that happened while" "$brief" \
+    "ship brief must require one batched report after captain-direct work ends"
+  assert_grep "is still reported immediately, never batched" "$brief" \
+    "ship brief must carve out immediate reporting for destructive/irreversible/security-sensitive findings and firstmate-only actions"
+
+  id="brief-captain-cases-scout"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --scout >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "scout brief was not scaffolded"
+  # shellcheck disable=SC2016 # Literal backticks and braces must remain unexpanded.
+  assert_grep 'append `paused: awaiting captain confirmation - {what}` and stop' "$brief" \
+    "scout brief must also instruct pausing for a specifically-named captain confirmation wait"
+  # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
+  assert_grep '`paused: captain working directly` once' "$brief" \
+    "scout brief must also instruct a single pause line when the captain takes over the pane"
+  assert_grep "is still reported immediately, never batched" "$brief" \
+    "scout brief must also carve out immediate reporting for destructive/irreversible/security-sensitive findings"
+
+  pass "fm-brief: status protocol covers a captain-confirmation wait and captain-direct-work batching in both ship and scout scaffolds"
+}
+
 test_codegraph_setup_block_present_in_scout_and_ship() {
   local brief
 
@@ -852,3 +893,4 @@ test_decision_key_position_pinned_in_ship_and_scout
 test_codegraph_section_overrides_global_skip_rule_and_scopes_index
 test_no_mistakes_dod_splits_gate_wait_into_three_branches
 test_ship_dod_requires_browser_verification_with_precondition
+test_status_protocol_covers_captain_check_and_captain_direct_work

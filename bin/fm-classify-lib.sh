@@ -675,6 +675,35 @@ signal_crew_provably_working() {  # <file> ...
   return 0
 }
 
+# Print "<task>\t<class>" (one line per distinct task, crew_absorb_class's
+# working/paused/none) for every task referenced by a no-verb "signal:" wake.
+# Same file-list-to-task mapping as signal_crew_provably_working. The
+# companion fix for a crew that declared paused: and then simply ended its
+# turn: signal_crew_provably_working alone reports such a task "none" (a
+# declared pause is not run-step/pane evidence of active work), so a paused
+# crew's every bare turn-end was surfacing as if it were unexplained silence.
+# This lets a caller treat "paused" as a third, separately-bounded absorb
+# case instead of collapsing it into "must surface" - the fm-watch.sh side
+# (signal_crew_absorbable) is what applies the actual bounded re-surface
+# cadence, exactly as the stale path already does for a paused window,
+# because that cadence needs sibling marker-file state this library's pure
+# reads deliberately do not carry.
+signal_crew_absorb_classes() {  # <file> ...
+  local f base task seen=""
+  for f in "$@"; do
+    base=${f##*/}
+    case "$base" in
+      *.status)     task=${base%.status} ;;
+      *.turn-ended) task=${base%.turn-ended} ;;
+      *)            continue ;;
+    esac
+    [ -n "$task" ] || continue
+    case " $seen " in *" $task "*) continue ;; esac
+    seen="$seen $task"
+    printf '%s\t%s\n' "$task" "$(crew_absorb_class "$task")"
+  done
+}
+
 # 0 (terminal/actionable) if a stale window's last status line is
 # captain-relevant; 1 otherwise, including the no-status case. A 1 only means
 # "non-terminal"; the always-on watcher then applies crew_is_provably_working,

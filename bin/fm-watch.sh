@@ -137,15 +137,30 @@ SIGNAL_GRACE=${FM_SIGNAL_GRACE:-30}   # seconds to linger after a signal so trai
 # (fm-classify-lib.sh) backs the away-mode daemon; while state/.afk exists the
 # daemon owns triage, so this watcher reverts to one-shot (enqueue + exit on every
 # wake) and never double-triages - and never runs the costly provably-working read.
-STALE_ESCALATE_SECS=${FM_STALE_ESCALATE_SECS:-240}  # idle secs before a provably-working stale escalates as a possible wedge
+STALE_ESCALATE_SECS=${FM_STALE_ESCALATE_SECS:-240}  # idle secs before a plain (not provably-working) stale escalates as a possible wedge
+# A provably-working stale (an actively-running no-mistakes step, or a busy
+# pane) still escalates eventually - the wedge case this whole mechanism
+# exists to catch - but on a MUCH longer bound than a plain idle pane: a
+# legitimate no-mistakes step routinely sits on an unchanged pane for minutes
+# (2026-08 ac-02: a validating step idle 256s, past the 240s STALE_ESCALATE_SECS
+# bound, false-alarmed 3 times while fm-crew-state.sh kept reporting it working
+# the whole time), so sharing STALE_ESCALATE_SECS with an ordinary idle/unknown
+# pane made every such run false-alarm as a "possible wedge." Default matches
+# the ~20-minute window from the PR #252 incident that FM_WEDGE_DEMAND_INSPECT_COUNT
+# above is itself named for, so a pane that is STILL claiming to work that long
+# after going quiet is exactly the case demand-deep-inspection must still catch.
+STALE_ESCALATE_WORKING_SECS=${FM_STALE_ESCALATE_WORKING_SECS:-1200}
 # A busy pane is unconditional proof of liveness with no built-in duration bound,
 # so a hung foreground call can remain hidden even while its rendered busy
 # footer changes every poll. BUSY_TURN_MAX_SECS bounds how long any busy pane
 # may go with no completed turn: once its task's
 # state/<id>.turn-ended marker (or, before any turn has completed, the task's
 # spawn record) is this old, busy_turn_over_age routes the pane through the
-# same STALE_ESCALATE_SECS-paced wedge_timer_check used for a provably-working
-# non-busy stale, so it escalates via the existing stale reason, escalation
+# same wedge_timer_check used for a provably-working non-busy stale, at the
+# plain STALE_ESCALATE_SECS pace (not the longer STALE_ESCALATE_WORKING_SECS -
+# a busy-but-turn-stalled pane is its own distinct wedge signal, not the
+# provably-working-pane case that bound exists for), so it escalates via the
+# existing stale reason, escalation
 # counter, and demand-deep-inspection marker for human inspection only - never
 # an automatic interrupt, signal, or restart. A completed turn touches
 # turn-ended and resets the age. Set generously above any legitimate interval
@@ -270,13 +285,21 @@ FM_WEDGE_DEMAND_INSPECT_COUNT=${FM_WEDGE_DEMAND_INSPECT_COUNT:-3}
 # Repeat-poll wedge-timer bookkeeping for an already-classified stale hash
 # absorbed as provably-working - repairs a missing/corrupt timer (self-heals a
 # watcher restart between recording the hash and recording the timer), or
-# escalates once STALE_ESCALATE_SECS have elapsed. Never re-reads the crew
-# state (the costly check already ran once, at classification time). Shared by
-# both places a hash can be absorbed this way: the plain non-terminal path,
-# and the stale_is_terminal-overridden path (a captain-relevant status-log
-# line that an active run/busy pane outranked).
-wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-file>
-  local win=$1 since_file=$2 label=$3 escalation_file=$4 since age n reason
+# escalates once STALE_ESCALATE_SECS have elapsed. Shared by both places a
+# hash can be absorbed this way: the plain non-terminal path, and the
+# stale_is_terminal-overridden path (a captain-relevant status-log line that
+# an active run/busy pane outranked).
+#
+# Optional <escalate-secs> overrides the default STALE_ESCALATE_SECS bound for
+# this timer - the provably-working call sites pass STALE_ESCALATE_WORKING_SECS
+# (see its definition) so a run-step that is genuinely still progressing
+# (running/fixing/ci) gets a much longer grace before "possible wedge" than a
+# plain idle/unknown pane, instead of sharing the same short bound. A run that
+# is truly stuck - the wedge case this timer exists to catch - still escalates
+# once ITS bound elapses; this only changes HOW LONG a provably-working pane is
+# trusted before that happens, never whether it eventually happens.
+wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-file> [<escalate-secs>]
+  local win=$1 since_file=$2 label=$3 escalation_file=$4 escalate_secs=${5:-$STALE_ESCALATE_SECS} since age n reason
   since=$(cat "$since_file" 2>/dev/null || true)
   case "$since" in
     ''|*[!0-9]*)
@@ -285,7 +308,7 @@ wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-
       ;;
     *)
       age=$(( $(date +%s) - since ))
-      if [ "$age" -ge "$STALE_ESCALATE_SECS" ]; then
+      if [ "$age" -ge "$escalate_secs" ]; then
         n=$(( $(cat "$escalation_file" 2>/dev/null || echo 0) + 1 ))
         echo "$n" > "$escalation_file"
         reason="stale: $win (idle ${age}s, possible wedge, escalation $n)"
@@ -343,6 +366,59 @@ handle_paused_stale() {  # <window> <task> <hash>
     wake "$reason"
   fi
   triage_log "absorbed stale (paused, awaiting external, age ${age}s): $win"
+}
+
+# Signal-path companion to handle_paused_stale's re-surface cadence: 0 (absorb,
+# no recheck due yet) while a paused task's status file is younger than
+# PAUSE_RESURFACE_SECS, or already re-surfaced within that window; 1 (recheck
+# due - caller must surface) once both the pause and the last re-surface are
+# at least that old, and records the new re-surface epoch as a side effect.
+# Same anchor as the stale path (the status file's own mtime, not a per-poll
+# timer, so a churny idle pane cannot keep resetting the cadence) but keyed by
+# task id, not a tmux window key: a "signal:" wake carries status/turn-ended
+# file paths, never a window, so there is no window-shaped key to reuse here.
+# This is what keeps a crew that declares paused: and then actually dies from
+# hiding forever behind signal_crew_absorb_classes' "paused" verdict alone.
+signal_paused_resurface_due() {  # <task>
+  local task=$1 statusf mtime age rf rf_age
+  statusf="$STATE/$task.status"
+  mtime=$(stat_mtime "$statusf")
+  case "$mtime" in ''|*[!0-9]*) mtime=$(date +%s) ;; esac
+  age=$(( $(date +%s) - mtime ))
+  rf="$STATE/.paused-signal-resurfaced-$task"
+  rf_age=$(age_of "$rf")   # 999999 when no prior re-surface
+  if [ "$age" -ge "$PAUSE_RESURFACE_SECS" ] && [ "$rf_age" -ge "$PAUSE_RESURFACE_SECS" ]; then
+    date +%s > "$rf"
+    return 1
+  fi
+  return 0
+}
+
+# 0 (absorb, no wake) if every task referenced by a no-verb "signal:" wake
+# (bare turn-end, working: note) is either provably working
+# (crew_absorb_class working) or a declared external-wait pause still inside
+# its re-surface cadence (crew_absorb_class paused, signal_paused_resurface_due
+# still due); 1 (surface) if any task is neither, its pause cadence expired,
+# or no task can be resolved. The single call site replaces
+# signal_crew_provably_working at the classification decision below - the
+# fix for a paused crew's every bare turn-end otherwise re-surfacing (a
+# declared pause was never positive "working" evidence, so it always fell
+# through to "must surface" before this existed).
+signal_crew_absorbable() {  # <file> ...
+  local classes task class
+  classes=$(signal_crew_absorb_classes "$@")
+  [ -n "$classes" ] || return 1
+  while IFS=$(printf '\t') read -r task class; do
+    [ -n "$task" ] || continue
+    case "$class" in
+      working) : ;;
+      paused) signal_paused_resurface_due "$task" || return 1 ;;
+      *) return 1 ;;
+    esac
+  done <<EOF
+$classes
+EOF
+  return 0
 }
 
 clear_pause_state() {  # <window>
@@ -883,17 +959,22 @@ EOF
     #   - the away-mode daemon owns triage (afk) and wants every wake;
     #   - any status file carries a captain-relevant verb;
     #   - or it is a no-verb wake (a bare turn-end, a working: note) whose crew is
-    #     NOT provably working - the crew stopped its turn with no actively-running
-    #     pipeline and no busy pane, so it may be done (even via an interactive menu
-    #     that wrote no done: status), waiting on a decision, or wedged. Absorbing
-    #     such a turn-end is exactly the swallowed-finish this change guards against.
+    #     NOT absorbable - neither provably working (no actively-running pipeline,
+    #     no busy pane, so it may be done even via an interactive menu that wrote no
+    #     done: status, waiting on a decision, or wedged) NOR a declared external-
+    #     wait pause still inside its bounded re-surface cadence. Absorbing such a
+    #     turn-end is exactly the swallowed-finish this change guards against. A
+    #     declared paused: crew's bare turn-end is absorbed too, but only within
+    #     PAUSE_RESURFACE_SECS of the pause - the same finite cadence the stale path
+    #     already applies via handle_paused_stale - so a crew that declares paused:
+    #     and then actually dies cannot hide behind it forever.
     # Actionable -> enqueue, advance .seen-* markers, exit. Benign (a no-verb wake
-    # whose crew IS provably working) in always-on mode -> advance the markers so it
-    # will not re-fire, log, and keep blocking without enqueuing. The provably-working
-    # check is the only costly one (it may run a bounded no-mistakes call), so the ||
-    # ordering evaluates it ONLY for a non-afk, no-captain-verb signal.
+    # whose crew IS absorbable) in always-on mode -> advance the markers so it will
+    # not re-fire, log, and keep blocking without enqueuing. The absorb-class read is
+    # the only costly one (it may run a bounded no-mistakes call), so the || ordering
+    # evaluates it ONLY for a non-afk, no-captain-verb signal.
     # shellcheck disable=SC2086  # $files is a space-separated status-path list (ids carry no spaces)
-    if afk_present || signal_reason_is_actionable $files || ! signal_crew_provably_working $files; then
+    if afk_present || signal_reason_is_actionable $files || ! signal_crew_absorbable $files; then
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
         fm_wake_append signal "$(basename "$f")" "$reason" || exit 1
@@ -1001,8 +1082,11 @@ EOF
             # This exact hash was already overridden as provably-working (a
             # wedge timer is running for it) - keep treating it that way
             # without re-reading the crew state every poll, and without
-            # letting the still-captain-relevant log line re-surface it.
-            wedge_timer_check "$w" "$ssf" "stale (overridden terminal status)" "$ewf"
+            # letting the still-captain-relevant log line re-surface it. Use
+            # the longer provably-working bound (see STALE_ESCALATE_WORKING_SECS)
+            # so a long-but-legitimate validation is not false-alarmed merely
+            # for sharing the ordinary idle-pane threshold.
+            wedge_timer_check "$w" "$ssf" "stale (overridden terminal status)" "$ewf" "$STALE_ESCALATE_WORKING_SECS"
           fi
           # else: already surfaced as genuinely terminal on a prior poll of
           # this same hash - nothing left to do (matches the original,
@@ -1013,7 +1097,9 @@ EOF
           # on first sight, never every poll) via pause_state_class, which returns:
           #   - working: an actively-running pipeline legitimately sits on a static
           #     pane (e.g. waiting on CI), so absorb and start the wedge timer so a
-          #     genuinely frozen run still escalates past STALE_ESCALATE_SECS;
+          #     genuinely frozen run still escalates past STALE_ESCALATE_WORKING_SECS
+          #     (a much longer bound than a plain idle pane's STALE_ESCALATE_SECS -
+          #     see its definition);
           #   - paused: the crew declared an external wait, or a declared pause or
           #     captain hold is paired with a confidently dead agent, so absorb on
           #     the long PAUSE_RESURFACE_SECS cadence instead of wedge-escalating;
@@ -1045,12 +1131,17 @@ EOF
                 paused)  handle_paused_stale "$w" "$task" "$h" ;;
                 working) clear_pause_state "$w"
                          printf '%s' "$h" > "$sf"
-                         wedge_timer_check "$w" "$ssf" "non-terminal stale (provably working after a declared pause)" "$ewf"
+                         wedge_timer_check "$w" "$ssf" "non-terminal stale (provably working after a declared pause)" "$ewf" "$STALE_ESCALATE_WORKING_SECS"
                          triage_log "absorbed non-terminal stale (provably working): $w" ;;
                 *)       handle_paused_stale "$w" "$task" "$h" ;;
               esac
             else
-              wedge_timer_check "$w" "$ssf" "non-terminal stale" "$ewf"
+              # This hash was already classified working on a prior poll (the
+              # branch above at "working)" seeded $ssf) with no re-read since.
+              # Use the longer provably-working bound (STALE_ESCALATE_WORKING_SECS)
+              # so a long-but-legitimate validation is not false-alarmed merely
+              # for sharing the ordinary idle-pane threshold.
+              wedge_timer_check "$w" "$ssf" "non-terminal stale" "$ewf" "$STALE_ESCALATE_WORKING_SECS"
             fi
           fi
         fi

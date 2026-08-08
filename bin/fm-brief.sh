@@ -354,6 +354,16 @@ $CODEGRAPH_SECTION
    known external wait you expect to clear on its own (an upstream release, a rate-limit reset):
    firstmate then leaves your idle pane alone and rechecks it on a long cadence instead of
    treating it as a possible wedge. Use \`blocked:\` when you are stuck and need help.
+   Two more standing cases both use \`$PAUSED_VERB\` (never \`blocked:\`), because both are expected, not stuck:
+   - You finished and are specifically waiting on a captain confirmation or approval named in your
+     task: append \`$PAUSED_VERB: awaiting captain confirmation - {what}\` and stop, UNLESS you are
+     actively driving a pipeline or gate that can still surface a decision you must answer - use
+     \`working:\` for that instead, never \`$PAUSED_VERB\`.
+   - Firstmate tells you the captain is now working directly in your pane: append exactly
+     \`$PAUSED_VERB: captain working directly\` once, then go quiet on status until firstmate tells
+     you the captain is done, then send one batched report covering everything that happened while
+     quiet. A destructive, irreversible, or security-sensitive finding, or anything only firstmate
+     can authorize (a merge, a credential), is still reported immediately, never batched.
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
 6. If a decision belongs to a human (product choices, destructive actions),
    append \`needs-decision [key=<slug>]: {summary of options}\` and stop. Firstmate will reply with the decision.
@@ -479,6 +489,16 @@ $RULE1
    known external wait you expect to clear on its own (an upstream release, a rate-limit reset,
    a scheduled window): firstmate then leaves your idle pane alone and rechecks it on a long
    cadence instead of treating it as a possible wedge. Use \`blocked:\` when you are stuck and need help.
+   Two more standing cases both use \`$PAUSED_VERB\` (never \`blocked:\`), because both are expected, not stuck:
+   - You finished and are specifically waiting on a captain confirmation or approval named in your
+     task: append \`$PAUSED_VERB: awaiting captain confirmation - {what}\` and stop, UNLESS a
+     no-mistakes run is active and can still surface a gate you must answer - use \`working:\` for
+     that instead, never \`$PAUSED_VERB\`.
+   - Firstmate tells you the captain is now working directly in your pane: append exactly
+     \`$PAUSED_VERB: captain working directly\` once, then go quiet on status until firstmate tells
+     you the captain is done, then send one batched report covering everything that happened while
+     quiet. A destructive, irreversible, or security-sensitive finding, or anything only firstmate
+     can authorize (a merge, a credential), is still reported immediately, never batched.
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
 6. If a decision belongs above the implementation worker (product choices, destructive actions, ask-user findings),
    append \`needs-decision [key=<slug>]: {summary of options}\` and stop. Firstmate will apply the configured authority and reply with the decision.
