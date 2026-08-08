@@ -303,7 +303,7 @@ An absent or incompatible `tasks-axi` reports `MISSING: tasks-axi (install: npm 
 An absent or incompatible `gh-axi` reports `MISSING: gh-axi (install: npm install -g gh-axi && gh-axi setup hooks)`.
 An absent or incompatible `lavish-axi` reports `MISSING: lavish-axi (install: npm install -g lavish-axi && lavish-axi setup hooks)`.
 An absent or too-old `quota-axi` reports `MISSING: quota-axi (install: npm install -g quota-axi)`; firstmate cannot resolve a profile array without a compatible binary.
-An absent `codegraph` reports `MISSING: codegraph (install: npm install -g @colbymchenry/codegraph)` at bootstrap; unlike the other universal tools, a missing `codegraph` also makes `fm-spawn.sh` itself refuse ship and scout spawns rather than only warning, per [`docs/architecture.md`](architecture.md#worktrees-not-branches-in-your-checkout).
+An absent `codegraph` reports `MISSING: codegraph (install: npm install -g @colbymchenry/codegraph)` at bootstrap; a missing `codegraph` never blocks `fm-spawn.sh` itself, which only warns and continues, per [`docs/architecture.md`](architecture.md#worktrees-not-branches-in-your-checkout).
 Bootstrap also reports a `TANGLE:` line when `FM_ROOT` is on a named non-default branch; follow the printed checkout remediation rather than treating it as an installable tool problem.
 In a read-only session that did not get the fleet lock, the same line is advisory and omits the checkout command.
 The locked session-start deferred network stage runs bootstrap's best-effort project clone refresh through `fm-fleet-sync.sh`.
