@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Spawn a direct report: a crewmate in a treehouse or Orca worktree, or a
 # secondmate in its isolated firstmate home.
-# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
-#        fm-spawn.sh <task-id> <project-dir> --scout [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
+# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--backend-port <port> --frontend-port <port>]
+#        fm-spawn.sh <task-id> <project-dir> --scout [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--backend-port <port> --frontend-port <port>]
 #        fm-spawn.sh <task-id> [<firstmate-home>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --secondmate
 #   --mode and --yolo are this task's delivery contract, REQUIRED for every ship
 #   spawn and refused on --scout and --secondmate spawns. Firstmate resolves both
@@ -42,6 +42,16 @@
 #   A backend spawn refusal (missing dependency, version gate, unauthenticated
 #   socket, or unsupported secondmate mode) is terminal for that selected backend;
 #   callers must surface it instead of silently retrying another backend.
+#   --backend-port <port> and --frontend-port <port> are firstmate's explicit,
+#   pre-decided dev port pair for this exact task's worktree, resolved at intake
+#   the same way as --model/--effort/--backend rather than picked by this script
+#   or bin/fm-worktree-runtime-lib.sh. Both are optional together (a project with
+#   no ports contract passes neither); passing only one is refused. Ship and
+#   scout spawns only (never --secondmate, whose worktree is a firstmate home,
+#   not a project checkout): the given pair is validated and written to
+#   code/web/.ports.worktree, and a malformed value, a collision with
+#   code/web/.ports.main, or a port that is already bound fails the spawn
+#   outright rather than silently substituting a different pair.
 #   A herdr crewmate or scout is placed in the exact workspace of the firstmate
 #   or secondmate process launching it, resolved from that process's own herdr
 #   pane rather than from a workspace label (herdr enforces no label uniqueness,
@@ -230,6 +240,8 @@ HARNESS_ARG=
 MODEL=
 EFFORT=
 BACKEND_ARG=
+BACKEND_PORT_ARG=
+FRONTEND_PORT_ARG=
 MODE=
 YOLO=
 TRACEPARENT_ARG=
@@ -237,6 +249,8 @@ HARNESS_SET=0
 MODEL_SET=0
 EFFORT_SET=0
 BACKEND_SET=0
+BACKEND_PORT_SET=0
+FRONTEND_PORT_SET=0
 MODE_SET=0
 YOLO_SET=0
 TRACEPARENT_SET=0
@@ -252,6 +266,8 @@ for a in "$@"; do
       model) MODEL=$a; MODEL_SET=1 ;;
       effort) EFFORT=$a; EFFORT_SET=1 ;;
       backend) BACKEND_ARG=$a; BACKEND_SET=1 ;;
+      "backend-port") BACKEND_PORT_ARG=$a; BACKEND_PORT_SET=1 ;;
+      "frontend-port") FRONTEND_PORT_ARG=$a; FRONTEND_PORT_SET=1 ;;
       mode) MODE=$a; MODE_SET=1 ;;
       yolo) YOLO=$a; YOLO_SET=1 ;;
       traceparent) TRACEPARENT_ARG=$a; TRACEPARENT_SET=1 ;;
@@ -271,6 +287,10 @@ for a in "$@"; do
     --effort=*) EFFORT=${a#--effort=}; EFFORT_SET=1 ;;
     --backend) want_value=backend ;;
     --backend=*) BACKEND_ARG=${a#--backend=}; BACKEND_SET=1 ;;
+    --backend-port) want_value="backend-port" ;;
+    --backend-port=*) BACKEND_PORT_ARG=${a#--backend-port=}; BACKEND_PORT_SET=1 ;;
+    --frontend-port) want_value="frontend-port" ;;
+    --frontend-port=*) FRONTEND_PORT_ARG=${a#--frontend-port=}; FRONTEND_PORT_SET=1 ;;
     --mode) want_value=mode ;;
     --mode=*) MODE=${a#--mode=}; MODE_SET=1 ;;
     --yolo) want_value=yolo ;;
@@ -285,9 +305,25 @@ done
 [ "$MODEL_SET" -eq 0 ] || [ -n "$MODEL" ] || { echo "error: --model requires a non-empty value" >&2; exit 1; }
 [ "$EFFORT_SET" -eq 0 ] || [ -n "$EFFORT" ] || { echo "error: --effort requires a non-empty value" >&2; exit 1; }
 [ "$BACKEND_SET" -eq 0 ] || [ -n "$BACKEND_ARG" ] || { echo "error: --backend requires a non-empty value" >&2; exit 1; }
+[ "$BACKEND_PORT_SET" -eq 0 ] || [ -n "$BACKEND_PORT_ARG" ] || { echo "error: --backend-port requires a non-empty value" >&2; exit 1; }
+[ "$FRONTEND_PORT_SET" -eq 0 ] || [ -n "$FRONTEND_PORT_ARG" ] || { echo "error: --frontend-port requires a non-empty value" >&2; exit 1; }
 [ "$MODE_SET" -eq 0 ] || [ -n "$MODE" ] || { echo "error: --mode requires a non-empty value" >&2; exit 1; }
 [ "$YOLO_SET" -eq 0 ] || [ -n "$YOLO" ] || { echo "error: --yolo requires a non-empty value" >&2; exit 1; }
 [ "$TRACEPARENT_SET" -eq 0 ] || [ -n "$TRACEPARENT_ARG" ] || { echo "error: --traceparent requires a non-empty value" >&2; exit 1; }
+if [ "$BACKEND_PORT_SET" -eq 1 ] || [ "$FRONTEND_PORT_SET" -eq 1 ]; then
+  [ "$BACKEND_PORT_SET" -eq 1 ] && [ "$FRONTEND_PORT_SET" -eq 1 ] || {
+    echo "error: --backend-port and --frontend-port must both be given together, or neither" >&2
+    exit 1
+  }
+  case "$BACKEND_PORT_ARG" in
+    [1-9] | [1-9][0-9]*) ;;
+    *) echo "error: --backend-port must be a positive integer, got '$BACKEND_PORT_ARG'" >&2; exit 1 ;;
+  esac
+  case "$FRONTEND_PORT_ARG" in
+    [1-9] | [1-9][0-9]*) ;;
+    *) echo "error: --frontend-port must be a positive integer, got '$FRONTEND_PORT_ARG'" >&2; exit 1 ;;
+  esac
+fi
 # A parent-delivered carrier replaces this home's own resolution, so it is
 # refused unless it is a secondmate spawn carrying a strictly valid W3C value.
 # Nothing else may reach the pane's TRACEPARENT export.
@@ -1870,13 +1906,20 @@ if [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   validate_spawn_worktree "treehouse get" "$T"
 fi
 
-# Give the worktree what it needs to actually run the app - a dev port pair,
-# a private database copy, and the gitignored dev env files - before the
-# worker's first turn. Ship and scout only: a secondmate's WT is its own
-# firstmate home, not a project checkout, and orca already validated WT above
-# in the same case branch this block follows.
+# Give the worktree what it needs to actually run the app - an assigned dev
+# port pair, a private database copy, and the gitignored dev env files -
+# before the worker's first turn. Ship and scout only: a secondmate's WT is
+# its own firstmate home, not a project checkout, and orca already validated
+# WT above in the same case branch this block follows. The port pair itself
+# is firstmate's decision at intake (--backend-port/--frontend-port, resolved
+# exactly like --model/--effort/--backend), never this script's or the
+# library's own choice; a bad or already-bound pair fails the spawn loudly
+# rather than being silently swapped for another one.
 if [ "$KIND" != secondmate ]; then
-  fm_worktree_runtime_provision "$WT" "$PROJ_ABS" "$STATE" "$ID"
+  fm_worktree_runtime_provision "$WT" "$PROJ_ABS" "$BACKEND_PORT_ARG" "$FRONTEND_PORT_ARG" || {
+    echo "error: fm-spawn: worktree runtime provisioning failed for $ID" >&2
+    exit 1
+  }
 fi
 
 # Per-task temp root: /tmp/fm-<id>/ with Go's build temp nested at gotmp/. Go won't

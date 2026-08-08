@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # tests/fm-worktree-runtime-lib.test.sh - unit tests for
 # bin/fm-worktree-runtime-lib.sh: what fm-spawn.sh copies into a task
-# worktree (dev database, env files) and how it assigns
-# code/web/.ports.worktree. Synthetic project/worktree/state fixtures only, no
-# real project clone and no spawn required.
+# worktree (dev database, env files) and how it validates and writes an
+# explicit BACKEND_PORT/FRONTEND_PORT pair firstmate already decided at
+# intake to code/web/.ports.worktree. Synthetic project/worktree fixtures
+# only, no real project clone and no spawn required.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -15,11 +16,10 @@ set -u
 TMP=$(fm_test_tmproot fm-worktree-runtime) || fail "could not create temp root"
 PROJ="$TMP/proj"
 WT="$TMP/wt"
-STATE="$TMP/state"
 mkdir -p "$PROJ/code/web/backend/.wrangler/state/v3/d1" \
   "$PROJ/code/web/backend/.wrangler/state/v3/do" \
   "$PROJ/code/web/frontend" \
-  "$WT" "$STATE"
+  "$WT"
 
 # --- database copy skips backup snapshots -----------------------------------
 
@@ -32,7 +32,7 @@ echo 'dev-vars' > "$PROJ/code/web/backend/.dev.vars"
 echo 'front-env' > "$PROJ/code/web/frontend/.env"
 echo 'front-env-prod' > "$PROJ/code/web/frontend/.env.production"
 
-fm_worktree_runtime_provision "$WT" "$PROJ" "$STATE" task-a
+fm_worktree_runtime_provision "$WT" "$PROJ" "" ""
 
 DEST="$WT/code/web/backend/.wrangler/state/v3"
 [ "$(cat "$DEST/d1/main.sqlite" 2>/dev/null)" = active-db ] \
@@ -68,13 +68,13 @@ pass "fm_worktree_runtime_provision copies frontend/.env and .env.production"
 EMPTY_PROJ="$TMP/empty-proj"
 EMPTY_WT="$TMP/empty-wt"
 mkdir -p "$EMPTY_PROJ" "$EMPTY_WT"
-fm_worktree_runtime_provision "$EMPTY_WT" "$EMPTY_PROJ" "$STATE" task-empty
+fm_worktree_runtime_provision "$EMPTY_WT" "$EMPTY_PROJ" "" ""
 rc=$?
 [ "$rc" -eq 0 ] || fail "provisioning a project with none of this layout must not fail the spawn (exit $rc)"
 [ ! -e "$EMPTY_WT/code" ] || fail "a project with no code/web layout must be left untouched"
 pass "fm_worktree_runtime_provision is a silent no-op for a project with no code/web layout (e.g. firstmate's own worktrees)"
 
-# --- port assignment: no collision with .ports.main or another live task -----
+# --- explicit port pair: firstmate's decision, this library only validates/writes it --
 
 PORTS_PROJ="$TMP/ports-proj"
 mkdir -p "$PORTS_PROJ/code/web"
@@ -84,42 +84,83 @@ mkdir -p "$PORTS_PROJ/code/web"
 } > "$PORTS_PROJ/code/web/.ports.main"
 
 WT1="$TMP/ports-wt1"
-WT2="$TMP/ports-wt2"
-mkdir -p "$WT1" "$WT2"
-
-fm_worktree_runtime_provision "$WT1" "$PORTS_PROJ" "$STATE" task-p1
+mkdir -p "$WT1"
+fm_worktree_runtime_provision "$WT1" "$PORTS_PROJ" 8902 5402
+rc=$?
+[ "$rc" -eq 0 ] || fail "a valid explicit port pair was refused (exit $rc)"
 B1=$(fm_worktree_runtime_kv "$WT1/code/web/.ports.worktree" BACKEND_PORT)
 F1=$(fm_worktree_runtime_kv "$WT1/code/web/.ports.worktree" FRONTEND_PORT)
-[ -n "$B1" ] && [ -n "$F1" ] || fail "no ports were assigned for a project that has .ports.main"
-[ "$B1" != 8802 ] && [ "$F1" != 5302 ] \
-  || fail "assigned ports collided with .ports.main (backend=$B1 frontend=$F1)"
-pass "fm_worktree_runtime_provision assigns ports distinct from .ports.main"
+[ "$B1" = 8902 ] && [ "$F1" = 5402 ] \
+  || fail "the given explicit pair was not written verbatim to .ports.worktree (got backend=$B1 frontend=$F1)"
+pass "fm_worktree_runtime_provision writes an explicit valid port pair verbatim"
 
-fm_write_meta "$STATE/task-p1.meta" "project=$PORTS_PROJ" "worktree=$WT1"
+# --- both ports empty with a code/web layout present is a silent no-op -------
 
-fm_worktree_runtime_provision "$WT2" "$PORTS_PROJ" "$STATE" task-p2
-B2=$(fm_worktree_runtime_kv "$WT2/code/web/.ports.worktree" BACKEND_PORT)
-F2=$(fm_worktree_runtime_kv "$WT2/code/web/.ports.worktree" FRONTEND_PORT)
-[ -n "$B2" ] && [ -n "$F2" ] || fail "no ports were assigned for the second live task"
-[ "$B2" != "$B1" ] || fail "two live tasks for the same project were assigned the same BACKEND_PORT ($B1)"
-[ "$F2" != "$F1" ] || fail "two live tasks for the same project were assigned the same FRONTEND_PORT ($F1)"
-pass "fm_worktree_runtime_provision assigns a second live task ports that do not collide with the first"
+WT_NOPORTS="$TMP/ports-wt-noports"
+mkdir -p "$WT_NOPORTS"
+fm_worktree_runtime_provision "$WT_NOPORTS" "$PORTS_PROJ" "" ""
+rc=$?
+[ "$rc" -eq 0 ] || fail "both ports empty (no ports contract for this spawn) must not fail (exit $rc)"
+[ ! -e "$WT_NOPORTS/code/web/.ports.worktree" ] \
+  || fail "both ports empty must not write .ports.worktree"
+pass "fm_worktree_runtime_provision is a silent no-op when both ports are empty"
 
-# A different project's own live port assignment must never constrain this
-# project's candidates, even if the numeric value happens to coincide.
-OTHER_PROJ="$TMP/other-proj"
-mkdir -p "$OTHER_PROJ/code/web"
-fm_write_meta "$STATE/task-other.meta" "project=$OTHER_PROJ" "worktree=$TMP/other-wt"
-mkdir -p "$TMP/other-wt/code/web"
-printf 'BACKEND_PORT=%s\nFRONTEND_PORT=%s\n' "$((B1 + 100))" "$((F1 + 100))" \
-  > "$TMP/other-wt/code/web/.ports.worktree"
+# --- only one of the two ports given is refused -------------------------------
 
-WT3="$TMP/ports-wt3"
-mkdir -p "$WT3"
-fm_worktree_runtime_provision "$WT3" "$PORTS_PROJ" "$STATE" task-p3
-B3=$(fm_worktree_runtime_kv "$WT3/code/web/.ports.worktree" BACKEND_PORT)
-[ "$B3" != $((B1 + 100)) ] || echo "note: task-p3 landed on the same numeric port as an unrelated project by coincidence of the offset scheme, not a scoping bug" >&2
-pass "fm_worktree_runtime_provision scopes collision-avoidance to the same project via each meta's project= field"
+WT_ONE="$TMP/ports-wt-one"
+mkdir -p "$WT_ONE"
+fm_worktree_runtime_write_ports "$WT_ONE" "$PORTS_PROJ" 8903 "" 2>/tmp/fm-worktree-runtime-one.err
+rc=$?
+[ "$rc" -ne 0 ] || fail "only backend-port given (frontend-port empty) must be refused, not silently accepted"
+[ ! -e "$WT_ONE/code/web/.ports.worktree" ] || fail "a refused one-sided pair must not write .ports.worktree"
+grep -q . /tmp/fm-worktree-runtime-one.err || fail "a refused one-sided pair must print a clear error"
+rm -f /tmp/fm-worktree-runtime-one.err
+pass "fm_worktree_runtime_write_ports refuses when only one of backend-port/frontend-port is given"
+
+# --- a non-integer or non-positive port value is refused ----------------------
+
+WT_BAD="$TMP/ports-wt-bad"
+mkdir -p "$WT_BAD"
+for bad in "abc" "0" "-5" "8902.5" ""; do
+  [ -n "$bad" ] || continue
+  fm_worktree_runtime_write_ports "$WT_BAD" "$PORTS_PROJ" "$bad" 5403 2>/dev/null
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "backend-port='$bad' must be refused as a non-positive-integer value"
+  [ ! -e "$WT_BAD/code/web/.ports.worktree" ] || fail "a refused malformed pair must not write .ports.worktree"
+done
+pass "fm_worktree_runtime_write_ports refuses a non-integer or non-positive port value"
+
+# --- a pair equal to .ports.main's values is refused ---------------------------
+
+WT_MAIN_COLLIDE="$TMP/ports-wt-main-collide"
+mkdir -p "$WT_MAIN_COLLIDE"
+fm_worktree_runtime_write_ports "$WT_MAIN_COLLIDE" "$PORTS_PROJ" 8802 5403 2>/dev/null
+rc=$?
+[ "$rc" -ne 0 ] || fail "a backend-port equal to .ports.main's BACKEND_PORT must be refused"
+[ ! -e "$WT_MAIN_COLLIDE/code/web/.ports.worktree" ] || fail "a refused main-collision pair must not write .ports.worktree"
+pass "fm_worktree_runtime_write_ports refuses a pair colliding with .ports.main"
+
+# --- a port that is already listening is refused, never silently swapped ------
+
+LISTEN_PORT=41879
+nc -l "$LISTEN_PORT" >/dev/null 2>&1 &
+NC_PID=$!
+trap 'kill "$NC_PID" 2>/dev/null; wait "$NC_PID" 2>/dev/null' EXIT
+sleep 0.3
+if lsof -nP -iTCP:"$LISTEN_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+  WT_BOUND="$TMP/ports-wt-bound"
+  mkdir -p "$WT_BOUND"
+  fm_worktree_runtime_write_ports "$WT_BOUND" "$PORTS_PROJ" "$LISTEN_PORT" 5404 2>/dev/null
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "a backend-port that is already listening must be refused, not silently swapped"
+  [ ! -e "$WT_BOUND/code/web/.ports.worktree" ] || fail "a refused already-bound pair must not write .ports.worktree"
+  pass "fm_worktree_runtime_write_ports refuses a port that is already listening"
+else
+  echo "note: could not confirm the test listener bound $LISTEN_PORT via lsof; skipping the already-listening assertion" >&2
+fi
+kill "$NC_PID" 2>/dev/null
+wait "$NC_PID" 2>/dev/null
+trap - EXIT
 
 # --- fresh copy every spawn: a recycled worktree's stale content is replaced -
 
@@ -127,7 +168,7 @@ mkdir -p "$WT1/code/web/backend/.wrangler/state/v3/d1" \
   "$PROJ/code/web/backend/.wrangler/state/v3/d1"
 echo 'stale-from-prior-crew' > "$WT1/code/web/backend/.wrangler/state/v3/d1/main.sqlite"
 echo 'active-db-refreshed' > "$PROJ/code/web/backend/.wrangler/state/v3/d1/main.sqlite"
-fm_worktree_runtime_provision "$WT1" "$PROJ" "$STATE" task-p1
+fm_worktree_runtime_provision "$WT1" "$PROJ" "" ""
 [ "$(cat "$WT1/code/web/backend/.wrangler/state/v3/d1/main.sqlite" 2>/dev/null)" = active-db-refreshed ] \
   || fail "a recycled worktree kept its stale database instead of a fresh copy"
 pass "fm_worktree_runtime_provision takes a fresh copy on every call, replacing recycled content"

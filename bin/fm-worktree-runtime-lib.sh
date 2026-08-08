@@ -1,6 +1,6 @@
 # shellcheck shell=bash
-# Best-effort provisioning of a task worktree's runtime needs (AGENTS.md
-# section 7's "actually run the app" gap): a dev port pair, a private copy of
+# Provisioning of a task worktree's runtime needs (AGENTS.md section 7's
+# "actually run the app" gap): an assigned dev port pair, a private copy of
 # the project's local dev database, and the gitignored dev env files.
 #
 # `git worktree` only carries tracked files, so a project that keeps its dev
@@ -12,19 +12,30 @@
 # does not, so a project with no such layout - firstmate's own worktrees
 # included - is untouched.
 #
+# Firstmate is the sole port decision-maker: the BACKEND_PORT/FRONTEND_PORT
+# pair arrives as explicit input, resolved by firstmate at intake exactly like
+# --model/--effort/--backend (bin/fm-spawn.sh's --backend-port/--frontend-port
+# flags), never picked by this library or by fm-spawn.sh itself. There is no
+# scan-then-decide step here at all, so the port-collision race that a prior
+# in-process "avoid every other live task's pair" scheme was exposed to (a
+# sibling task's own state/<id>.meta not existing yet when this ran) is
+# removed by design, not mitigated by a lock: this library only validates and
+# writes the pair it is given, and refuses loudly - failing the spawn - on
+# anything malformed or already bound, rather than silently choosing another.
+#
 # Usage: . bin/fm-worktree-runtime-lib.sh
 #
 # Public entry point:
-#   fm_worktree_runtime_provision <worktree-root> <project-root> <state-dir> <task-id>
+#   fm_worktree_runtime_provision <worktree-root> <project-root> <backend-port> <frontend-port>
 #     Copies code/web/backend/.wrangler/state/v3 (minus backup snapshots),
 #     code/web/backend/.dev.vars, and code/web/frontend/.env[.production] from
-#     the project into the worktree, then assigns and writes a fresh
-#     code/web/.ports.worktree BACKEND_PORT/FRONTEND_PORT pair that collides
-#     with neither code/web/.ports.main nor any other live task's assigned
-#     pair for the same project. Every step is independently best-effort: a
-#     missing source is skipped silently, a copy or write failure is a
-#     stderr warning, and this function always returns 0 so a project with
-#     none of this layout never fails a spawn.
+#     the project into the worktree - each independently best-effort: a
+#     missing source is skipped silently, a copy failure is a stderr warning,
+#     never a spawn failure. Then, when both ports are given, validates and
+#     writes them to code/web/.ports.worktree; a bad or already-bound pair is
+#     the one deliberate exception to best-effort here and makes this function
+#     return non-zero, which the caller must treat as a spawn failure. Both
+#     ports empty is a silent no-op (no ports contract for this spawn).
 #
 # Data flows one way only: this always copies FROM the project's clone INTO
 # the worktree. Nothing here ever writes back into the project, so nothing a
@@ -39,8 +50,8 @@
 FM_WORKTREE_RUNTIME_WEB_REL="code/web"
 
 # Echo <file>'s last "<key>=<value>" line with surrounding whitespace
-# stripped, or nothing when absent/empty. Used for both state/<id>.meta
-# fields and the project's own KEY=value port files.
+# stripped, or nothing when absent/empty. Used to read the project's own
+# KEY=value port file (code/web/.ports.main).
 fm_worktree_runtime_kv() {  # <file> <key>
   local file=$1 key=$2
   [ -f "$file" ] || return 0
@@ -48,9 +59,7 @@ fm_worktree_runtime_kv() {  # <file> <key>
 }
 
 # Echo <file>'s <key> value only when it is present and a positive integer;
-# otherwise echo nothing. Ports are the only KEY=value pairs this library
-# trusts from either the project's own files or a sibling task's meta, so
-# every read of one goes through this guard.
+# otherwise echo nothing. Used to read code/web/.ports.main's own ports.
 fm_worktree_runtime_port() {  # <file> <key>
   local v
   v=$(fm_worktree_runtime_kv "$1" "$2")
@@ -104,92 +113,101 @@ fm_worktree_runtime_copy_env_files() {  # <worktree-web> <project-web>
   done
 }
 
-# Assign a BACKEND_PORT/FRONTEND_PORT pair that collides with neither
-# code/web/.ports.main nor any other live task's own code/web/.ports.worktree
-# for the SAME project (read via each state/<id>.meta's project= field, so an
-# unrelated project's ports never constrain this one), then write
-# code/web/.ports.worktree. A project with no .ports.main is not using this
-# contract at all, so this is a silent no-op for it - jinwooauto's own
-# scripts/ports.sh falls back to .ports.main whenever .ports.worktree is
-# absent, so leaving it unwritten is always safe, never a broken state.
-#
-# The scan-then-write below is a critical section: two tasks for the same
-# project can be spawned concurrently (fm-spawn.sh only serializes same-id
-# spawns via its per-task SPAWN_TASK_LOCK), and the calling task's own
-# state/<id>.meta is not written until well after this function returns, so
-# an unlocked scan of *.meta could race another concurrent provision call and
-# hand out the same pair to both. A per-project lock directory under
-# state_dir (independent of any single task's meta) closes that window.
-fm_worktree_runtime_assign_ports() {  # <worktree-root> <project-root> <state-dir> <task-id>
-  local wt=$1 proj=$2 state_dir=$3 id=$4
-  local wt_web="$wt/$FM_WORKTREE_RUNTIME_WEB_REL" proj_web="$proj/$FM_WORKTREE_RUNTIME_WEB_REL"
-  local main_file="$proj_web/.ports.main" backend_main frontend_main
-  [ -f "$main_file" ] || return 0
-  backend_main=$(fm_worktree_runtime_port "$main_file" BACKEND_PORT)
-  frontend_main=$(fm_worktree_runtime_port "$main_file" FRONTEND_PORT)
-  if [ -z "$backend_main" ] || [ -z "$frontend_main" ]; then
-    echo "warning: fm-spawn: $main_file has no usable BACKEND_PORT/FRONTEND_PORT; skipping port assignment for $id" >&2
+# Return 0 iff <port> is confirmed free right now via lsof. Any uncertainty -
+# lsof reporting something other than a clean "in use"/"not in use" answer, or
+# lsof itself being unavailable - is treated as NOT confirmed free (fail
+# closed), mirroring fm_lock_lsof_holder's convention in bin/fm-lock-lib.sh: an
+# unproven answer is never treated as license to proceed.
+fm_worktree_runtime_port_is_free() {  # <port>
+  local port=$1 output status
+  if output=$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>&1); then
+    return 1
+  else
+    status=$?
+  fi
+  if [ "$status" -eq 1 ] && [ -z "$output" ]; then
     return 0
   fi
-
-  local proj_key port_lock
-  proj_key=$(printf '%s' "$proj" | cksum | cut -d' ' -f1)
-  port_lock="$state_dir/.ports-$proj_key.lock"
-  if declare -F fm_lock_acquire_wait >/dev/null 2>&1 && declare -F fm_lock_release >/dev/null 2>&1; then
-    fm_lock_acquire_wait "$port_lock"
-    # shellcheck disable=SC2064 # port_lock is fixed for this call; expand it now.
-    trap "fm_lock_release '$port_lock' || true" RETURN
-  fi
-
-  local used_backend=" $backend_main " used_frontend=" $frontend_main "
-  local meta other_proj other_wt other_ports_file ob of
-  for meta in "$state_dir"/*.meta; do
-    [ -f "$meta" ] || continue
-    other_proj=$(fm_worktree_runtime_kv "$meta" project)
-    [ "$other_proj" = "$proj" ] || continue
-    other_wt=$(fm_worktree_runtime_kv "$meta" worktree)
-    [ -n "$other_wt" ] && [ "$other_wt" != "$wt" ] || continue
-    other_ports_file="$other_wt/$FM_WORKTREE_RUNTIME_WEB_REL/.ports.worktree"
-    ob=$(fm_worktree_runtime_port "$other_ports_file" BACKEND_PORT)
-    of=$(fm_worktree_runtime_port "$other_ports_file" FRONTEND_PORT)
-    [ -n "$ob" ] && [ -n "$of" ] || continue
-    used_backend="$used_backend$ob "
-    used_frontend="$used_frontend$of "
-  done
-
-  local n=1 cand_b cand_f
-  while [ "$n" -le 1000 ]; do
-    cand_b=$((backend_main + n * 100))
-    cand_f=$((frontend_main + n * 100))
-    case "$used_backend" in *" $cand_b "*) n=$((n + 1)); continue ;; esac
-    case "$used_frontend" in *" $cand_f "*) n=$((n + 1)); continue ;; esac
-    break
-  done
-  if [ "$n" -gt 1000 ]; then
-    echo "warning: fm-spawn: could not find a free port pair for $id after 1000 candidates; skipping port assignment" >&2
-    return 0
-  fi
-
-  mkdir -p "$wt_web" 2>/dev/null || {
-    echo "warning: fm-spawn: could not create $wt_web for port assignment" >&2
-    return 0
-  }
-  {
-    printf 'BACKEND_PORT=%s\n' "$cand_b"
-    printf 'FRONTEND_PORT=%s\n' "$cand_f"
-  } > "$wt_web/.ports.worktree" 2>/dev/null \
-    || echo "warning: fm-spawn: failed to write $wt_web/.ports.worktree" >&2
+  return 1
 }
 
-# Public entry point. Always returns 0: a project with none of this layout
-# (firstmate's own worktrees included) is a silent no-op, and a copy or
-# write failure is a warning, never a spawn failure.
-fm_worktree_runtime_provision() {  # <worktree-root> <project-root> <state-dir> <task-id>
-  local wt=$1 proj=$2 state_dir=$3 id=$4
+# Validate and write an explicit BACKEND_PORT/FRONTEND_PORT pair - chosen by
+# firstmate at intake, never by this library - to code/web/.ports.worktree.
+# Both empty is a silent no-op (no ports contract for this spawn). Any
+# validation failure (non-integer, non-positive, equal to each other, equal to
+# code/web/.ports.main's own pair, or already bound) prints a clear error and
+# returns non-zero; the caller must fail the spawn rather than fall back to
+# choosing a different pair.
+fm_worktree_runtime_write_ports() {  # <worktree-root> <project-root> <backend-port> <frontend-port>
+  local wt=$1 proj=$2 backend_port=$3 frontend_port=$4
+  local wt_web="$wt/$FM_WORKTREE_RUNTIME_WEB_REL" proj_web="$proj/$FM_WORKTREE_RUNTIME_WEB_REL"
+
+  if [ -z "$backend_port" ] && [ -z "$frontend_port" ]; then
+    return 0
+  fi
+  if [ -z "$backend_port" ] || [ -z "$frontend_port" ]; then
+    echo "error: fm-spawn: backend-port and frontend-port must both be given, or neither (got backend='$backend_port' frontend='$frontend_port')" >&2
+    return 1
+  fi
+  case "$backend_port" in
+    [1-9] | [1-9][0-9]*) ;;
+    *) echo "error: fm-spawn: backend-port must be a positive integer, got '$backend_port'" >&2; return 1 ;;
+  esac
+  case "$frontend_port" in
+    [1-9] | [1-9][0-9]*) ;;
+    *) echo "error: fm-spawn: frontend-port must be a positive integer, got '$frontend_port'" >&2; return 1 ;;
+  esac
+  if [ "$backend_port" = "$frontend_port" ]; then
+    echo "error: fm-spawn: backend-port and frontend-port must differ, both were '$backend_port'" >&2
+    return 1
+  fi
+
+  local main_file="$proj_web/.ports.main" backend_main frontend_main
+  if [ -f "$main_file" ]; then
+    backend_main=$(fm_worktree_runtime_port "$main_file" BACKEND_PORT)
+    frontend_main=$(fm_worktree_runtime_port "$main_file" FRONTEND_PORT)
+    if [ -n "$backend_main" ] && [ "$backend_port" = "$backend_main" ]; then
+      echo "error: fm-spawn: backend-port $backend_port collides with $main_file's own BACKEND_PORT" >&2
+      return 1
+    fi
+    if [ -n "$frontend_main" ] && [ "$frontend_port" = "$frontend_main" ]; then
+      echo "error: fm-spawn: frontend-port $frontend_port collides with $main_file's own FRONTEND_PORT" >&2
+      return 1
+    fi
+  fi
+
+  fm_worktree_runtime_port_is_free "$backend_port" || {
+    echo "error: fm-spawn: backend-port $backend_port is not confirmed free; refusing to write $wt_web/.ports.worktree" >&2
+    return 1
+  }
+  fm_worktree_runtime_port_is_free "$frontend_port" || {
+    echo "error: fm-spawn: frontend-port $frontend_port is not confirmed free; refusing to write $wt_web/.ports.worktree" >&2
+    return 1
+  }
+
+  mkdir -p "$wt_web" || {
+    echo "error: fm-spawn: could not create $wt_web for port assignment" >&2
+    return 1
+  }
+  {
+    printf 'BACKEND_PORT=%s\n' "$backend_port"
+    printf 'FRONTEND_PORT=%s\n' "$frontend_port"
+  } > "$wt_web/.ports.worktree" || {
+    echo "error: fm-spawn: failed to write $wt_web/.ports.worktree" >&2
+    return 1
+  }
+}
+
+# Public entry point. The copy steps are independently best-effort (a missing
+# source is a silent skip, a copy failure is a stderr warning) and never fail
+# this function on their own. The port-write step is the one deliberate
+# exception: this function returns non-zero when it fails, and the caller
+# (bin/fm-spawn.sh) must treat that as a spawn failure rather than a warning.
+fm_worktree_runtime_provision() {  # <worktree-root> <project-root> <backend-port> <frontend-port>
+  local wt=$1 proj=$2 backend_port=$3 frontend_port=$4
   local wt_web="$wt/$FM_WORKTREE_RUNTIME_WEB_REL" proj_web="$proj/$FM_WORKTREE_RUNTIME_WEB_REL"
   [ -d "$proj_web" ] || return 0
   fm_worktree_runtime_copy_state_v3 "$wt_web" "$proj_web"
   fm_worktree_runtime_copy_env_files "$wt_web" "$proj_web"
-  fm_worktree_runtime_assign_ports "$wt" "$proj" "$state_dir" "$id"
-  return 0
+  fm_worktree_runtime_write_ports "$wt" "$proj" "$backend_port" "$frontend_port"
 }
