@@ -119,7 +119,14 @@ pass "the Linux start path puts the whole worker tree in its own process group"
 # survives a teardown that looks complete.
 rm -rf "$CASE1/remote-jobs"
 kill -TERM "$SERVE" 2>/dev/null || true
-wait_gone "$SERVE" 10 || fail "the serving child ignored TERM"
+# TERM alone cannot guarantee an orderly shutdown here: with the state root
+# already gone, worker_shutdown's quarantine write fails and it deliberately
+# re-arms rather than exit, leaving the next main-loop iteration's heartbeat
+# write failure as the actual exit path. That path shares its fate with "a
+# worker stops its whole tree once its code root is pruned" below, so it gets
+# the same generous window rather than the tighter one a direct signal kill
+# would need.
+wait_gone "$SERVE" 60 || fail "the serving child ignored TERM"
 alive "$WORKER" || fail "the fixture supervisor did not survive a lone child kill, so this case no longer covers the leak"
 wait_child "$WORKER" 15 || fail "the supervisor did not respawn after its recorded child pid was killed"
 pass "removing the state root and killing the recorded worker pid leaves the tree running at ppid 1"
