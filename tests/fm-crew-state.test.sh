@@ -740,19 +740,25 @@ EOF
 
 # A live gate-fix pipeline commits fixes into ITS OWN repo, so the newest
 # same-branch runs-list row can report a head this worktree has no object
-# for at all (unresolvable, not merely a mismatch). An older, terminal
-# same-branch row must never be matched instead: an unresolvable newest-row
-# head means "cannot tell", not "not this crew". Regression coverage for the
-# 2026-08-08 incident where a live `running` run at an unresolvable head was
-# skipped and an older `failed` row at the worktree's own (matching) head was
-# reported as this crew's current state.
+# for at all (unresolvable, not merely a mismatch) - the NORMAL state during
+# fix rounds, not evidence the crew is idle. An older, terminal same-branch
+# row must never be matched instead (that would misreport a live run as
+# failed), but neither may the unresolvable row itself be CLAIMED as this
+# crew's run: doing so sets HAVE_RUN=1 and stops the reader from ever
+# reaching the pane fallback below, silently reporting a provably busy crew
+# as `unknown` and starving bin/fm-watch.sh's absorb-only-when-provably-working
+# design of the true answer it needs (crew_absorb_class only treats
+# state=working with source in {run-step, pane} as absorbable - see
+# bin/fm-classify-lib.sh). Regression coverage for the 2026-08-08 incident:
+# every no-mistakes task showed this on every fix round, so the watcher never
+# absorbed a single one of those stale wakes.
 test_unresolvable_newest_row_head_does_not_fall_through_to_older_row() {
   reset_fakes
   local d short; d=$(new_case unresolvable-newest-row)
   make_repo_on_branch "$d/wt" fm/feat-h
   short=$(git -C "$d/wt" rev-parse --short=7 HEAD)
   make_fakebin "$d" >/dev/null
-  fm_write_meta "$d/state/feat-h.meta" "window=fm:fm-feat-h" "worktree=$d/wt" "kind=ship"
+  fm_write_meta "$d/state/feat-h.meta" "window=fm:fm-feat-h" "worktree=$d/wt" "kind=ship" "harness=claude"
   # Bare `axi status` answers for a different branch, forcing the coarse
   # runs-list fallback for this branch.
   FM_FAKE_AXI_STATUS="$(run_running fm/other-crew)"
@@ -766,11 +772,44 @@ test_unresolvable_newest_row_head_does_not_fall_through_to_older_row() {
   failed     fm/feat-h ${short}  2026-08-07 20:00
 EOF
 )"
+  FM_FAKE_BUSY=1
+  local gen; gen=$("$ROOT/bin/fm-busy-event.sh" arm "$d/state" feat-h)
+  "$ROOT/bin/fm-busy-event.sh" apply "$d/state" feat-h busy --gen "$gen" \
+    --source claude-hook --event user-prompt-submit
   local out; out=$(run_crew_state "$d" feat-h)
   assert_not_contains "$out" "state: failed" "unresolvable live run must never surface an older row's failed state"
-  assert_contains "$out" "state: unknown" "unresolvable newest same-branch head reports unknown, not a stale row"
-  assert_contains "$out" "source: run-step" "still attributed to this branch's run-step lookup"
-  pass "unresolvable newest-row head does not fall through to an older same-branch row"
+  assert_not_contains "$out" "source: run-step" "an unresolvable head must not be claimed as this crew's run"
+  assert_not_contains "$out" "state: unknown" "an unresolvable head with a busy pane must not report unknown either"
+  assert_contains "$out" "state: working" "the live pane signal answers once the coarse lookup claims nothing"
+  assert_contains "$out" "source: pane" "falls through to the pane instead of being suppressed by HAVE_RUN"
+  pass "unresolvable newest-row head claims no run and falls through to the pane"
+}
+
+# Companion to the busy-pane case above: an unresolvable newest-row head with
+# an IDLE pane and no other current-state evidence must still resolve to
+# unknown (from the pane/log fallback path, source: pane or none) rather than
+# to the older same-branch row's terminal `failed` status. The fix that lets
+# a busy pane answer must not become a fix that lets a stale terminal row
+# answer instead - both would defeat the whole point of this predicate.
+test_unresolvable_newest_row_head_with_idle_pane_still_ignores_older_row() {
+  reset_fakes
+  local d short; d=$(new_case unresolvable-newest-row-idle)
+  make_repo_on_branch "$d/wt" fm/feat-h3
+  short=$(git -C "$d/wt" rev-parse --short=7 HEAD)
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-h3.meta" "window=fm:fm-feat-h3" "worktree=$d/wt" "kind=ship" "harness=claude"
+  FM_FAKE_AXI_STATUS="$(run_running fm/other-crew)"
+  FM_FAKE_RUNS_LIST="$(cat <<EOF
+  running    fm/other-crew aaaaaaa  2026-08-08 09:00
+  running    fm/feat-h3 deadbee1  2026-08-08 10:05
+  failed     fm/feat-h3 ${short}  2026-08-07 20:00
+EOF
+)"
+  local out; out=$(run_crew_state "$d" feat-h3)
+  assert_not_contains "$out" "state: failed" "unresolvable live run must never surface an older row's failed state, even when idle"
+  assert_not_contains "$out" "source: run-step" "an unresolvable head must not be claimed as this crew's run"
+  assert_contains "$out" "state: unknown" "no busy evidence at all -> unknown, not the stale older row"
+  pass "unresolvable newest-row head with an idle pane still ignores the older same-branch row"
 }
 
 # The other half of the newest-same-branch-row rule: a row whose sha this
@@ -1254,6 +1293,39 @@ EOF
   pass "crew_is_provably_working absorbs a validating crew found only via the runs-list fallback"
 }
 
+# The absorb-side regression pair for the 2026-08-08 incident: an unresolvable
+# newest-row head used to set HAVE_RUN=1 with state=unknown, which
+# crew_absorb_class never treats as working (only state=working with
+# source in {run-step, pane} qualifies - bin/fm-classify-lib.sh), so
+# bin/fm-watch.sh surfaced every one of these as a stale wake instead of
+# absorbing them. With a busy pane behind an unresolvable head,
+# crew_is_provably_working must now return true.
+test_provably_working_via_unresolvable_head_and_busy_pane() {
+  reset_fakes
+  local d short; d=$(new_case provably-working-unresolvable)
+  make_repo_on_branch "$d/wt" fm/feat-unresolvable
+  short=$(git -C "$d/wt" rev-parse --short=7 HEAD)
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-unresolvable.meta" "window=fm:fm-feat-unresolvable" "worktree=$d/wt" "kind=ship" "harness=claude"
+  FM_FAKE_AXI_STATUS="$(run_running fm/other-crew)"
+  # Newest same-branch row's head (deadbee1) is not a real object in this
+  # worktree at all - the pipeline committed gate fixes into its own repo, the
+  # normal state during an active fix round.
+  FM_FAKE_RUNS_LIST="$(cat <<EOF
+  running    fm/other-crew aaaaaaa  2026-08-08 09:00
+  running    fm/feat-unresolvable deadbee1  2026-08-08 10:05
+  failed     fm/feat-unresolvable ${short}  2026-08-07 20:00
+EOF
+)"
+  FM_FAKE_BUSY=1
+  local gen; gen=$("$ROOT/bin/fm-busy-event.sh" arm "$d/state" feat-unresolvable)
+  "$ROOT/bin/fm-busy-event.sh" apply "$d/state" feat-unresolvable busy --gen "$gen" \
+    --source claude-hook --event user-prompt-submit
+  PATH="$d/fakebin:$PATH" FM_STATE_OVERRIDE="$d/state" crew_is_provably_working feat-unresolvable \
+    || fail "an unresolvable run head with a busy pane was not treated as provably working"
+  pass "crew_is_provably_working absorbs a busy crew behind an unresolvable run head"
+}
+
 test_not_provably_working_when_stopped() {
   reset_fakes
   local d; d=$(new_case provably-working-stopped)
@@ -1399,6 +1471,7 @@ test_terminal_failed
 test_cross_branch_attribution_via_runs_list
 test_cross_branch_attribution_picks_most_recent_row
 test_unresolvable_newest_row_head_does_not_fall_through_to_older_row
+test_unresolvable_newest_row_head_with_idle_pane_still_ignores_older_row
 test_coarse_resolvable_non_matching_head_is_not_claimed_as_this_run
 test_coarse_run_does_not_probe_other_branch_ci_log_for_ready_status
 test_other_branch_run_ignored
@@ -1421,6 +1494,7 @@ test_scout_skips_run_lookup
 test_torn_down_worktree
 test_missing_meta
 test_provably_working_via_runs_list_fallback
+test_provably_working_via_unresolvable_head_and_busy_pane
 test_not_provably_working_when_stopped
 test_usage_error
 test_historical_same_branch_rewritten_head_not_current
