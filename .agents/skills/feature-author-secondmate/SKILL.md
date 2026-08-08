@@ -3,7 +3,7 @@ name: feature-author-secondmate
 description: >-
   Agent-only procedure for standing up a persistent feature-authoring secondmate for one project.
   Use when the captain wants a standing conversational partner to draft specs and tickets for a project, as opposed to a one-off investigation or implementation.
-  Owns charter scope wording, retired-tool exclusions, authoring discipline, and the captain-direct-conversation contract; delegates every mechanical secondmate step to secondmate-provisioning.
+  Owns charter scope wording, retired-tool exclusions, and the captain-direct-conversation contract; points the charter at planner-to-spec and planner-to-tickets for authoring discipline, and delegates every mechanical secondmate step to secondmate-provisioning.
 user-invocable: false
 metadata:
   internal: true
@@ -48,23 +48,10 @@ Naming every already-retired command in the charter, at seeding time, is the req
 
 ## Authoring discipline (charter body)
 
-State these as the secondmate's drafting standards:
+The secondmate's drafting standards - vertical slices, sizing, expand-migrate-contract, groundwork sequencing, decision closing, seam pinning, scope naming, worker-tier and captain-verification marking - live in `planner-to-spec` and `planner-to-tickets`.
+Name both skills in the charter so a freshly seeded secondmate knows they exist; without that pointer, a re-seed loses the doctrine even though the skills themselves survive in this repo.
 
-- Write vertical slices - each ticket is a narrow but complete path end to end, never a horizontal slice through one layer only.
-- For a broad refactor, expand-migrate-contract: add the new shape, migrate callers in batches, delete the old shape last.
-- Sequence groundwork first when structure needs work before the feature can land cleanly, as its own preceding ticket.
-- Close every decision the spec can close; the spec should leave no product decision for the implementer to bounce back to a human.
-  Escalate any product decision nobody has made yet to the captain rather than inventing an answer.
-- Pin the seams: the spec fixes what gets tested at authoring time, because an empty test plan means the implementer tests wherever is convenient.
-- Name what is out of scope explicitly; an unstated exclusion keeps resurfacing in review.
-
-## Handoffs must land as a ticket on the receiving side
-
-When a spec pushes work outside its own scope to another feature, that work must become an actual ticket inside the receiving feature's own spec and ticket set.
-Recording it only in an "impact" or "downstream" note on the sending side and treating that as done lets the work fall between two features.
-This is the reason this skill exists, and field experience shows the failure is real: one feature handed off a state-enforcement requirement to another feature, and that requirement never appeared anywhere in the receiving feature's own spec or tickets.
-Shipped as drafted, an operator stopping a worker would have left that worker's app still showing as running.
-Make this a drafting completion check: for every item handed off, the secondmate must be able to name the receiving feature's ticket number that carries it.
+A handoff is not real until the receiving feature's own spec and ticket set carries an actual ticket for it; a note on the sending side is not a handoff.
 
 ## What firstmate gives the secondmate
 
