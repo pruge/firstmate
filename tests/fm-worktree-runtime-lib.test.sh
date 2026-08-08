@@ -145,7 +145,7 @@ pass "fm_worktree_runtime_write_ports refuses a pair colliding with .ports.main"
 LISTEN_PORT=41879
 nc -l "$LISTEN_PORT" >/dev/null 2>&1 &
 NC_PID=$!
-trap 'kill "$NC_PID" 2>/dev/null; wait "$NC_PID" 2>/dev/null' EXIT
+trap 'kill "$NC_PID" 2>/dev/null; wait "$NC_PID" 2>/dev/null; fm_test_cleanup' EXIT
 sleep 0.3
 if lsof -nP -iTCP:"$LISTEN_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
   WT_BOUND="$TMP/ports-wt-bound"
@@ -160,7 +160,7 @@ else
 fi
 kill "$NC_PID" 2>/dev/null
 wait "$NC_PID" 2>/dev/null
-trap - EXIT
+trap fm_test_cleanup EXIT
 
 # --- fresh copy every spawn: a recycled worktree's stale content is replaced -
 
