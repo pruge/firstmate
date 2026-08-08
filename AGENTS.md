@@ -525,6 +525,8 @@ These skills are not captain-invocable; load them only at their precise triggers
 - `firstmate-codexapp` - load before coordinating a visible Codex Desktop thread, evaluating a Codex App backend request, or reconciling Codex Desktop host-tool smoke evidence for Firstmate work.
 - `firstmate-coding-guidelines` - load before changing firstmate's shared, tracked material, as defined by section 1's list, whether editing directly or briefing a crewmate for a firstmate-repo task.
 - `feature-author-secondmate` - load before standing up a persistent secondmate whose job is to draft feature specs and tickets with the captain for one project.
+- `planner-to-spec` - load before writing or substantially revising a feature spec.
+- `planner-to-tickets` - load before writing a ticket set or handing one over for dispatch.
 
 ## 14. Relay
 
