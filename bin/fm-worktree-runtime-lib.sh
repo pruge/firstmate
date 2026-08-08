@@ -31,11 +31,17 @@
 #     code/web/backend/.dev.vars, and code/web/frontend/.env[.production] from
 #     the project into the worktree - each independently best-effort: a
 #     missing source is skipped silently, a copy failure is a stderr warning,
-#     never a spawn failure. Then, when both ports are given, validates and
-#     writes them to code/web/.ports.worktree; a bad or already-bound pair is
-#     the one deliberate exception to best-effort here and makes this function
-#     return non-zero, which the caller must treat as a spawn failure. Both
-#     ports empty is a silent no-op (no ports contract for this spawn).
+#     never a spawn failure. The copied frontend/.env additionally gets its
+#     VITE_BACKEND_URL rewritten to the given backend-port when one is given,
+#     so a worktree copy never points a directly-launched vite dev server at
+#     the project's main port (scripts/dev-frontend.sh already overrides this
+#     at launch, so nothing is broken today without this - it just removes a
+#     stale value that would otherwise sit in the file as a trap).
+#     Then, when both ports are given, validates and writes them to
+#     code/web/.ports.worktree; a bad or already-bound pair is the one
+#     deliberate exception to best-effort here and makes this function return
+#     non-zero, which the caller must treat as a spawn failure. Both ports
+#     empty is a silent no-op (no ports contract for this spawn).
 #
 # Data flows one way only: this always copies FROM the project's clone INTO
 # the worktree. Nothing here ever writes back into the project, so nothing a
@@ -98,18 +104,51 @@ fm_worktree_runtime_copy_state_v3() {  # <worktree-web> <project-web>
   done < <(find "$src" -iname '*bak*' -prune -o -type f -print0 2>/dev/null)
 }
 
+# Rewrite frontend/.env's VITE_BACKEND_URL to the worktree's own assigned
+# backend port. scripts/dev-frontend.sh already exports the correct value at
+# launch (an env var set at process start wins over the .env file), so this
+# is not fixing a broken dev flow - but the copied file itself would
+# otherwise keep the project's main-port value verbatim, and several frontend
+# source files fall back to a hardcoded "http://localhost:8802" via
+# `?? "http://localhost:8802"` when VITE_BACKEND_URL is unset. That fallback
+# means DROPPING the line would reproduce the exact same wrong value for
+# anyone who starts vite directly instead of through the launcher, so
+# rewriting it to the real assigned port is the only shape that actually
+# removes the trap. frontend/.env.production is never touched here: its
+# VITE_BACKEND_URL points at the real deployed Workers backend, unrelated to
+# any local dev port.
+fm_worktree_runtime_rewrite_backend_url() {  # <env-file> <backend-port>
+  local file=$1 backend_port=$2 tmp
+  [ -n "$backend_port" ] || return 0
+  case "$backend_port" in
+    [1-9] | [1-9][0-9]*) ;;
+    *) return 0 ;;
+  esac
+  grep -q '^VITE_BACKEND_URL=' "$file" 2>/dev/null || return 0
+  tmp="$file.tmp.$$"
+  if sed "s|^VITE_BACKEND_URL=.*|VITE_BACKEND_URL=http://localhost:${backend_port}|" "$file" > "$tmp" 2>/dev/null \
+    && mv "$tmp" "$file" 2>/dev/null; then
+    return 0
+  fi
+  rm -f "$tmp" 2>/dev/null
+  echo "warning: fm-spawn: failed to rewrite VITE_BACKEND_URL in $file to the assigned backend port" >&2
+}
+
 # Copy the project's gitignored dev env files into the worktree, one at a
 # time, skipping any that do not exist in the project.
-fm_worktree_runtime_copy_env_files() {  # <worktree-web> <project-web>
-  local wt_web=$1 proj_web=$2 rel
+fm_worktree_runtime_copy_env_files() {  # <worktree-web> <project-web> <backend-port>
+  local wt_web=$1 proj_web=$2 backend_port=$3 rel
   for rel in backend/.dev.vars frontend/.env frontend/.env.production; do
     [ -f "$proj_web/$rel" ] || continue
     mkdir -p "$wt_web/$(dirname "$rel")" 2>/dev/null || {
       echo "warning: fm-spawn: could not create directory for $rel in $wt_web" >&2
       continue
     }
-    cp -p "$proj_web/$rel" "$wt_web/$rel" 2>/dev/null \
-      || echo "warning: fm-spawn: failed to copy $rel into $wt_web" >&2
+    cp -p "$proj_web/$rel" "$wt_web/$rel" 2>/dev/null || {
+      echo "warning: fm-spawn: failed to copy $rel into $wt_web" >&2
+      continue
+    }
+    [ "$rel" = frontend/.env ] && fm_worktree_runtime_rewrite_backend_url "$wt_web/$rel" "$backend_port"
   done
 }
 
@@ -208,6 +247,6 @@ fm_worktree_runtime_provision() {  # <worktree-root> <project-root> <backend-por
   local wt_web="$wt/$FM_WORKTREE_RUNTIME_WEB_REL" proj_web="$proj/$FM_WORKTREE_RUNTIME_WEB_REL"
   [ -d "$proj_web" ] || return 0
   fm_worktree_runtime_copy_state_v3 "$wt_web" "$proj_web"
-  fm_worktree_runtime_copy_env_files "$wt_web" "$proj_web"
+  fm_worktree_runtime_copy_env_files "$wt_web" "$proj_web" "$backend_port"
   fm_worktree_runtime_write_ports "$wt" "$proj" "$backend_port" "$frontend_port"
 }

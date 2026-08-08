@@ -94,6 +94,33 @@ F1=$(fm_worktree_runtime_kv "$WT1/code/web/.ports.worktree" FRONTEND_PORT)
   || fail "the given explicit pair was not written verbatim to .ports.worktree (got backend=$B1 frontend=$F1)"
 pass "fm_worktree_runtime_provision writes an explicit valid port pair verbatim"
 
+# --- frontend/.env's VITE_BACKEND_URL is rewritten to the assigned backend port --
+
+ENV_PROJ="$TMP/env-proj"
+mkdir -p "$ENV_PROJ/code/web/frontend"
+printf 'VITE_BACKEND_URL=http://localhost:8802\nOTHER_KEY=unchanged\n' > "$ENV_PROJ/code/web/frontend/.env"
+printf 'VITE_BACKEND_URL=https://example.workers.dev\n' > "$ENV_PROJ/code/web/frontend/.env.production"
+
+ENV_WT="$TMP/env-wt"
+mkdir -p "$ENV_WT"
+fm_worktree_runtime_provision "$ENV_WT" "$ENV_PROJ" 9001 9101
+[ "$(fm_worktree_runtime_kv "$ENV_WT/code/web/frontend/.env" VITE_BACKEND_URL)" = "http://localhost:9001" ] \
+  || fail "frontend/.env's VITE_BACKEND_URL was not rewritten to the assigned backend port"
+[ "$(fm_worktree_runtime_kv "$ENV_WT/code/web/frontend/.env" OTHER_KEY)" = unchanged ] \
+  || fail "rewriting VITE_BACKEND_URL must not disturb other lines in frontend/.env"
+pass "fm_worktree_runtime_provision rewrites frontend/.env's VITE_BACKEND_URL to the assigned backend port"
+
+[ "$(fm_worktree_runtime_kv "$ENV_WT/code/web/frontend/.env.production" VITE_BACKEND_URL)" = "https://example.workers.dev" ] \
+  || fail "frontend/.env.production's VITE_BACKEND_URL must never be rewritten - it points at the real deployed backend, unrelated to any local dev port"
+pass "fm_worktree_runtime_provision leaves frontend/.env.production untouched"
+
+ENV_WT_NOPORTS="$TMP/env-wt-noports"
+mkdir -p "$ENV_WT_NOPORTS"
+fm_worktree_runtime_provision "$ENV_WT_NOPORTS" "$ENV_PROJ" "" ""
+[ "$(fm_worktree_runtime_kv "$ENV_WT_NOPORTS/code/web/frontend/.env" VITE_BACKEND_URL)" = "http://localhost:8802" ] \
+  || fail "frontend/.env's VITE_BACKEND_URL must be left as copied when no backend-port is given"
+pass "fm_worktree_runtime_provision leaves VITE_BACKEND_URL untouched when no ports are given (no ports contract for this spawn)"
+
 # --- both ports empty with a code/web layout present is a silent no-op -------
 
 WT_NOPORTS="$TMP/ports-wt-noports"
