@@ -759,7 +759,7 @@ test_codegraph_section_overrides_global_skip_rule_and_scopes_index() {
   pass "fm-brief: CodeGraph section overrides the global skip rule and scopes the index"
 }
 
-test_no_mistakes_dod_forbids_passive_gate_monitoring() {
+test_no_mistakes_dod_splits_gate_wait_into_three_branches() {
   local home id brief
   home="$TMP_ROOT/passive-monitor-home"
   mkdir -p "$home/data"
@@ -767,11 +767,23 @@ test_no_mistakes_dod_forbids_passive_gate_monitoring() {
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   assert_present "$brief" "ship brief was not scaffolded"
-  assert_grep "poll" "$brief" \
-    "no-mistakes DOD must tell the crew to poll the gate directly rather than watch a background monitor"
-  assert_grep "never end a turn" "$brief" \
-    "no-mistakes DOD must forbid ending a turn parked on a passive monitor"
-  pass "fm-brief: no-mistakes DOD forbids passive background monitoring of a gate or CI"
+  assert_grep "poll its state directly in the foreground" "$brief" \
+    "no-mistakes DOD must offer a foreground poll branch for short waits"
+  assert_grep "GUARANTEED to wake or resume this same agent" "$brief" \
+    "no-mistakes DOD must require a wake-guaranteed monitor, not just any background job, for long waits"
+  # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
+  assert_grep '`&`, `nohup`, `disown`' "$brief" \
+    "no-mistakes DOD must name the forbidden unattended-background forms so a crew cannot mistake them for a monitor"
+  assert_grep "confirm it is actually still alive" "$brief" \
+    "no-mistakes DOD must require checking a background job is alive before relying on it"
+  # shellcheck disable=SC2016 # Literal backticks and braces must remain unexpanded.
+  assert_grep 'append `paused: {why}` before you end the turn' "$brief" \
+    "no-mistakes DOD must require leaving a paused marker whenever the wait is long"
+  assert_grep "cannot tell a deliberate wait from a wedge" "$brief" \
+    "no-mistakes DOD must explain why the paused marker is required, not just assert it"
+  assert_grep "Never end a turn with no foreground poll, no guaranteed-wake monitor" "$brief" \
+    "no-mistakes DOD must forbid ending a turn with none of the three wait disciplines in place"
+  pass "fm-brief: no-mistakes DOD splits gate/CI waiting into foreground-poll, wake-guaranteed-monitor, and paused-marker branches"
 }
 
 test_ship_dod_requires_browser_verification_with_precondition() {
@@ -838,5 +850,5 @@ test_scout_and_secondmate_scaffold
 test_codegraph_setup_block_present_in_scout_and_ship
 test_decision_key_position_pinned_in_ship_and_scout
 test_codegraph_section_overrides_global_skip_rule_and_scopes_index
-test_no_mistakes_dod_forbids_passive_gate_monitoring
+test_no_mistakes_dod_splits_gate_wait_into_three_branches
 test_ship_dod_requires_browser_verification_with_precondition
