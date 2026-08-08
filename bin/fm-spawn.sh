@@ -122,6 +122,11 @@
 #   default-branch commit when safe; skipped syncs warn and launch unchanged.
 #   Ship/scout spawns refuse to launch unless the resolved task path is a real
 #   git worktree root distinct from the primary project checkout.
+#   Right after that worktree is validated, a ship/scout spawn matches its local
+#   CodeGraph index to the checked-out code (fm_spawn_codegraph_sync: init when
+#   no `.codegraph/` exists there yet, sync otherwise) before the brief is sent.
+#   This is a best-effort optimization, never a spawn gate: no codegraph binary,
+#   a failing init/sync, or a bounded timeout all warn and let the spawn continue.
 # Batch dispatch: pass one or more `id=repo` pairs instead of a single <id> <project>, e.g.
 #     fm-spawn.sh fix-a-k3=projects/foo add-b-q7=projects/bar [--scout]
 #   Each pair re-execs this script in single-task mode, so the single path stays the only
@@ -229,6 +234,8 @@ SUB_HOME_MARKER=".fm-secondmate-home"
 . "$SCRIPT_DIR/fm-remote-readiness-lib.sh"
 # shellcheck source=bin/fm-worktree-runtime-lib.sh
 . "$SCRIPT_DIR/fm-worktree-runtime-lib.sh"
+# shellcheck source=bin/fm-codegraph-sync-lib.sh
+. "$SCRIPT_DIR/fm-codegraph-sync-lib.sh"
 # Fail closed before any fleet mutation: a no-mistakes gate agent must never spawn
 # a direct report (see bin/fm-gate-refuse-lib.sh).
 fm_refuse_if_gate_agent
@@ -1920,6 +1927,7 @@ if [ "$KIND" != secondmate ]; then
     echo "error: fm-spawn: worktree runtime provisioning failed for $ID" >&2
     exit 1
   }
+  fm_spawn_codegraph_sync "$WT"
 fi
 
 # Per-task temp root: /tmp/fm-<id>/ with Go's build temp nested at gotmp/. Go won't
