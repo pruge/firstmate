@@ -752,6 +752,10 @@ test_codegraph_section_overrides_global_skip_rule_and_scopes_index() {
     "CodeGraph section must correct the wrong assumption that init is slow"
   assert_grep "subtree" "$brief" \
     "CodeGraph section must tell the crew to scope the index to the subtree it is working on"
+  assert_grep "use that same path for every later \`codegraph\` command in this task - \`status\`, \`explore\`, and \`sync\` alike" "$brief" \
+    "CodeGraph section must carry the chosen subtree path through status, explore, and sync, not just init"
+  assert_grep "if it reports no index there, the path is wrong - re-check it before concluding anything about CodeGraph" "$brief" \
+    "CodeGraph section must separate a missing index (wrong path) from an unsupported language, not conflate them"
   pass "fm-brief: CodeGraph section overrides the global skip rule and scopes the index"
 }
 
@@ -778,10 +782,12 @@ test_ship_dod_requires_browser_verification_with_precondition() {
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   assert_present "$brief" "ship brief was not scaffolded"
-  assert_grep "unless this worktree cannot run the app" "$brief" \
-    "ship brief must state the worktree precondition explicitly rather than assuming the app runs"
-  assert_grep "reproduce it in a real browser with chrome-devtools-axi before your fix and confirm it is gone after" "$brief" \
+  assert_grep "check whether this worktree has local data, env files, and an assigned dev port before concluding it can't run the app - do not assume it cannot run without checking" "$brief" \
+    "ship brief must make the worktree precondition a check to perform, not a claim of established fact"
+  assert_grep "reproduce the bug in a real browser with chrome-devtools-axi before your fix and confirm it is gone after" "$brief" \
     "ship brief must require before/after browser reproduction of visible fixes, not test-only verification"
+  assert_grep "name which of the three (data, env files, dev port) was missing in your report" "$brief" \
+    "ship brief must require naming which precondition was missing rather than a blanket can't-run claim"
   pass "fm-brief: ship brief requires browser verification of visible changes, with its precondition stated"
 }
 

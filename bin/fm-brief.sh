@@ -59,12 +59,14 @@
 # because a fresh task worktree never has that directory and the brief itself is
 # the indexing decision that instruction defers: run `codegraph init` once (it
 # typically finishes in single-digit seconds, so cost is not a reason to skip it).
-# When the repo holds several unrelated subtrees, scope init and later `codegraph
-# explore` calls to the one subtree the task concerns and name that subtree in the
-# report or status. Then self-check with `codegraph status` and skip CodeGraph
-# entirely when that index is missing, failed, or trivially small for what was
-# indexed because those languages are unsupported (shell and Markdown are
-# unsupported, so firstmate's own repo is expected to produce a near-empty graph).
+# When the repo holds several unrelated subtrees, scope init to the one subtree
+# the task concerns, name that subtree in the report or status, and use that
+# same path for every later `codegraph` command (`status`, `explore`, `sync`).
+# Self-check with `codegraph status` against that path: no index there means
+# the path is wrong, re-check it, while an index that exists but is trivially
+# small for what was indexed means those languages are unsupported (shell and
+# Markdown are unsupported, so firstmate's own repo is expected to produce a
+# near-empty graph) - the two conclusions are distinct and never conflated.
 # Otherwise prefer `codegraph explore` over grep, run `codegraph sync` after
 # edits, and never commit the machine-local `.codegraph/` index.
 # Refuses to overwrite an existing brief.
@@ -313,10 +315,10 @@ fi
 
 IFS= read -r -d '' CODEGRAPH_SECTION <<'EOF' || true
 **Prefer CodeGraph over grep for exploring code.** This brief overrides the general "no `.codegraph/`, skip CodeGraph" environment instruction for this task: a fresh task worktree never has one, so that instruction's deferred "indexing is the user's decision" is this brief deciding it - build the index rather than skipping it. If a `codegraph` command exists on PATH, run `codegraph init` once in this worktree before starting work - it builds a local index that every later `codegraph` call reuses, so init never needs re-running, and it typically completes in single-digit seconds even on a large repo, not minutes, so cost is not a reason to skip it.
-`codegraph init` accepts a path: if your task concerns one subtree of a repo that holds multiple unrelated ones (for example separate frontend/backend, web/mobile, or per-service directories that don't call into each other), scope init and later `codegraph explore` calls to the subtree your task actually concerns rather than the repository root, and say in your report or status which subtree you chose - indexing everything together makes an unrelated subtree's symbols compete with the ones you actually need.
-After init, run `codegraph status`. If the index is missing, failed, or has a trivially small node count for what you indexed, its languages are not supported by CodeGraph - skip it entirely and use ordinary tools instead. Shell scripts and Markdown are not supported languages, so a shell-and-docs repo (firstmate itself is one) will produce a near-empty graph; that is expected, not an error.
-When the index is real, reach for `codegraph explore "<symbols or question>"` BEFORE grep, find, or opening files to locate or understand code - one call answers most structural questions. Trust what it returns: the source it prints is already read, so do not re-grep to confirm it.
-The index does not follow your edits on its own when you drive CodeGraph from the shell, so run `codegraph sync` after you change files and before the next `codegraph explore`, or read the files you just edited directly. If a response warns that a file is pending, read that file directly too.
+`codegraph init` accepts a path: if your task concerns one subtree of a repo that holds multiple unrelated ones (for example separate frontend/backend, web/mobile, or per-service directories that don't call into each other), scope init to the subtree your task actually concerns rather than the repository root, and say in your report or status which subtree you chose - indexing everything together makes an unrelated subtree's symbols compete with the ones you actually need. Once you've chosen a path, use that same path for every later `codegraph` command in this task - `status`, `explore`, and `sync` alike - not just `init`.
+After init, run `codegraph status` against that same path. These are two different conclusions, so do not conflate them: if it reports no index there, the path is wrong - re-check it before concluding anything about CodeGraph. Only when an index genuinely exists at that path but has a trivially small node count for what you indexed are that subtree's languages unsupported by CodeGraph - skip it entirely and use ordinary tools instead. Shell scripts and Markdown are not supported languages, so a shell-and-docs repo (firstmate itself is one) will produce a near-empty graph; that is expected, not an error.
+When the index is real, reach for `codegraph explore "<symbols or question>"` (same path) BEFORE grep, find, or opening files to locate or understand code - one call answers most structural questions. Trust what it returns: the source it prints is already read, so do not re-grep to confirm it.
+The index does not follow your edits on its own when you drive CodeGraph from the shell, so run `codegraph sync` (same path) after you change files and before the next `codegraph explore`, or read the files you just edited directly. If a response warns that a file is pending, read that file directly too.
 Never commit the index: `.codegraph/` is machine-local and large. If this repo does not already ignore it, leave it untracked and never `git add -A` - do not add the ignore entry as a side change to an unrelated task.
 EOF
 CODEGRAPH_SECTION=${CODEGRAPH_SECTION%$'\n'}
@@ -459,7 +461,7 @@ $CODEGRAPH_SECTION
 $RULE1
 2. Stay inside this worktree; modify nothing outside it.
 3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
-   If this task fixes something a human would see on screen, reproduce it in a real browser with chrome-devtools-axi before your fix and confirm it is gone after, with evidence, rather than relying on tests alone - unless this worktree cannot run the app (it has no local data, env files, or an assigned dev port today), in which case say that explicitly instead of silently skipping the check.
+   If this task fixes something a human would see on screen, check whether this worktree has local data, env files, and an assigned dev port before concluding it can't run the app - do not assume it cannot run without checking. When it can, reproduce the bug in a real browser with chrome-devtools-axi before your fix and confirm it is gone after, with evidence, rather than relying on tests alone. When it genuinely cannot, name which of the three (data, env files, dev port) was missing in your report instead of silently skipping the check.
 4. Report status by appending one line:
    \`echo "{state}: {one short line}" >> $STATUS_FILE\`
    States: working, needs-decision, blocked, $PAUSED_VERB, done, failed.
