@@ -54,13 +54,19 @@
 # it carries the AGENTS.md authoring bar (widely useful knowledge only, pointers
 # over copied detail) and has the crewmate add the fm-ensure-agents-md.sh
 # self-governance section when a touched project AGENTS.md lacks it.
-# Scout and ship briefs both carry a fixed CodeGraph section: run `codegraph init`
-# once in the worktree, self-check with `codegraph status`, and skip CodeGraph
-# entirely when that index is missing, failed, or trivially small because the repo's
-# languages are unsupported (shell and Markdown are unsupported, so firstmate's own
-# repo is expected to produce a near-empty graph). Otherwise prefer `codegraph
-# explore` over grep, run `codegraph sync` after edits, and never commit the
-# machine-local `.codegraph/` index.
+# Scout and ship briefs both carry a fixed CodeGraph section. It overrides the
+# general "no `.codegraph/` directory, so skip CodeGraph" environment instruction,
+# because a fresh task worktree never has that directory and the brief itself is
+# the indexing decision that instruction defers: run `codegraph init` once (it
+# typically finishes in single-digit seconds, so cost is not a reason to skip it).
+# When the repo holds several unrelated subtrees, scope init and later `codegraph
+# explore` calls to the one subtree the task concerns and name that subtree in the
+# report or status. Then self-check with `codegraph status` and skip CodeGraph
+# entirely when that index is missing, failed, or trivially small for what was
+# indexed because those languages are unsupported (shell and Markdown are
+# unsupported, so firstmate's own repo is expected to produce a near-empty graph).
+# Otherwise prefer `codegraph explore` over grep, run `codegraph sync` after
+# edits, and never commit the machine-local `.codegraph/` index.
 # Refuses to overwrite an existing brief.
 set -eu
 
