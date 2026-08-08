@@ -710,6 +710,87 @@ test_scout_and_secondmate_scaffold() {
   pass "fm-brief: scout and secondmate code paths still scaffold well-formed briefs"
 }
 
+test_decision_key_position_pinned_in_ship_and_scout() {
+  local home id brief
+  home="$TMP_ROOT/decision-key-home"
+  mkdir -p "$home/data"
+
+  id="brief-decision-key-ship"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "ship brief was not scaffolded"
+  # shellcheck disable=SC2016  # backticks must stay literal in the generated example
+  assert_grep '`needs-decision [key=<slug>]: {summary of options}`' "$brief" \
+    "ship rule 6 must show the key token BETWEEN the verb and colon, not after it"
+  assert_grep "bin/fm-classify-lib.sh" "$brief" \
+    "ship rule 6 must cross-reference the owner of the key-token grammar instead of restating it"
+
+  id="brief-decision-key-scout"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --scout >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "scout brief was not scaffolded"
+  # shellcheck disable=SC2016  # backticks must stay literal in the generated example
+  assert_grep '`needs-decision [key=<slug>]: {summary of options}`' "$brief" \
+    "scout rule 6 must show the key token BETWEEN the verb and colon, not after it"
+
+  pass "fm-brief: needs-decision rule pins the key token's position with a correct example"
+}
+
+test_codegraph_section_overrides_global_skip_rule_and_scopes_index() {
+  local home id brief
+  home="$TMP_ROOT/codegraph-override-home"
+  mkdir -p "$home/data"
+  id="brief-codegraph-override"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "ship brief was not scaffolded"
+  assert_grep "overrides" "$brief" \
+    "CodeGraph section must state it overrides the general no-index-skip-it rule"
+  assert_grep "is this brief deciding it" "$brief" \
+    "CodeGraph section must say the deferred user's-decision about indexing IS this brief"
+  assert_grep "single-digit seconds even on a large repo, not minutes" "$brief" \
+    "CodeGraph section must correct the wrong assumption that init is slow"
+  assert_grep "subtree" "$brief" \
+    "CodeGraph section must tell the crew to scope the index to the subtree it is working on"
+  assert_grep "use that same path for every later \`codegraph\` command in this task - \`status\`, \`explore\`, and \`sync\` alike" "$brief" \
+    "CodeGraph section must carry the chosen subtree path through status, explore, and sync, not just init"
+  assert_grep "if it reports no index there, the path is wrong - re-check it before concluding anything about CodeGraph" "$brief" \
+    "CodeGraph section must separate a missing index (wrong path) from an unsupported language, not conflate them"
+  pass "fm-brief: CodeGraph section overrides the global skip rule and scopes the index"
+}
+
+test_no_mistakes_dod_forbids_passive_gate_monitoring() {
+  local home id brief
+  home="$TMP_ROOT/passive-monitor-home"
+  mkdir -p "$home/data"
+  id="brief-passive-monitor"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "ship brief was not scaffolded"
+  assert_grep "poll" "$brief" \
+    "no-mistakes DOD must tell the crew to poll the gate directly rather than watch a background monitor"
+  assert_grep "never end a turn" "$brief" \
+    "no-mistakes DOD must forbid ending a turn parked on a passive monitor"
+  pass "fm-brief: no-mistakes DOD forbids passive background monitoring of a gate or CI"
+}
+
+test_ship_dod_requires_browser_verification_with_precondition() {
+  local home id brief
+  home="$TMP_ROOT/browser-verify-home"
+  mkdir -p "$home/data"
+  id="brief-browser-verify"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "ship brief was not scaffolded"
+  assert_grep "check whether this worktree has local data, env files, and an assigned dev port before concluding it can't run the app - do not assume it cannot run without checking" "$brief" \
+    "ship brief must make the worktree precondition a check to perform, not a claim of established fact"
+  assert_grep "reproduce the bug in a real browser with chrome-devtools-axi before your fix and confirm it is gone after" "$brief" \
+    "ship brief must require before/after browser reproduction of visible fixes, not test-only verification"
+  assert_grep "name which of the three (data, env files, dev port) was missing in your report" "$brief" \
+    "ship brief must require naming which precondition was missing rather than a blanket can't-run claim"
+  pass "fm-brief: ship brief requires browser verification of visible changes, with its precondition stated"
+}
+
 test_codegraph_setup_block_present_in_scout_and_ship() {
   local brief
 
@@ -755,3 +836,7 @@ test_pause_verb_override_renders_all_brief_scaffolds
 test_scout_and_secondmate_load_decision_hold_policy
 test_scout_and_secondmate_scaffold
 test_codegraph_setup_block_present_in_scout_and_ship
+test_decision_key_position_pinned_in_ship_and_scout
+test_codegraph_section_overrides_global_skip_rule_and_scopes_index
+test_no_mistakes_dod_forbids_passive_gate_monitoring
+test_ship_dod_requires_browser_verification_with_precondition
