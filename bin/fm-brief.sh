@@ -306,8 +306,9 @@ HERDR_SECTION=${HERDR_SECTION%$'\n'}
 fi
 
 IFS= read -r -d '' CODEGRAPH_SECTION <<'EOF' || true
-**Prefer CodeGraph over grep for exploring code.** If a `codegraph` command exists on PATH, run `codegraph init` once in this worktree before starting work - it builds a local index of this repo that every later `codegraph` call reuses, so init never needs re-running.
-After init, run `codegraph status`. If the index is missing, failed, or has a trivially small node count for a repo this size, this project's languages are not supported by CodeGraph - skip it entirely and use ordinary tools instead. Shell scripts and Markdown are not supported languages, so a shell-and-docs repo (firstmate itself is one) will produce a near-empty graph; that is expected, not an error.
+**Prefer CodeGraph over grep for exploring code.** This brief overrides the general "no `.codegraph/`, skip CodeGraph" environment instruction for this task: a fresh task worktree never has one, so that instruction's deferred "indexing is the user's decision" is this brief deciding it - build the index rather than skipping it. If a `codegraph` command exists on PATH, run `codegraph init` once in this worktree before starting work - it builds a local index that every later `codegraph` call reuses, so init never needs re-running, and it typically completes in single-digit seconds even on a large repo, not minutes, so cost is not a reason to skip it.
+`codegraph init` accepts a path: if your task concerns one subtree of a repo that holds multiple unrelated ones (for example separate frontend/backend, web/mobile, or per-service directories that don't call into each other), scope init and later `codegraph explore` calls to the subtree your task actually concerns rather than the repository root, and say in your report or status which subtree you chose - indexing everything together makes an unrelated subtree's symbols compete with the ones you actually need.
+After init, run `codegraph status`. If the index is missing, failed, or has a trivially small node count for what you indexed, its languages are not supported by CodeGraph - skip it entirely and use ordinary tools instead. Shell scripts and Markdown are not supported languages, so a shell-and-docs repo (firstmate itself is one) will produce a near-empty graph; that is expected, not an error.
 When the index is real, reach for `codegraph explore "<symbols or question>"` BEFORE grep, find, or opening files to locate or understand code - one call answers most structural questions. Trust what it returns: the source it prints is already read, so do not re-grep to confirm it.
 The index does not follow your edits on its own when you drive CodeGraph from the shell, so run `codegraph sync` after you change files and before the next `codegraph explore`, or read the files you just edited directly. If a response warns that a file is pending, read that file directly too.
 Never commit the index: `.codegraph/` is machine-local and large. If this repo does not already ignore it, leave it untracked and never `git add -A` - do not add the ignore entry as a side change to an unrelated task.
@@ -347,7 +348,8 @@ $CODEGRAPH_SECTION
    treating it as a possible wedge. Use \`blocked:\` when you are stuck and need help.
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
 6. If a decision belongs to a human (product choices, destructive actions),
-   append \`needs-decision: {summary of options}\` and stop. Firstmate will reply with the decision.
+   append \`needs-decision [key=<slug>]: {summary of options}\` and stop. Firstmate will reply with the decision.
+   The optional key token sits BETWEEN the verb and the colon, never after it (grammar owned by \`bin/fm-classify-lib.sh\`).
    A decision or blocker you opened stays open until a \`resolved\` line carrying its exact key lands; a later \`done:\` or \`working:\` line never closes it, even when the answer is what started that work.
    Firstmate's reply normally writes that closing line at answer time; when a blocker or wait clears WITHOUT a firstmate reply, append \`resolved: {how it cleared}\` yourself (same \`[key=<slug>]\` if you opened it with one) as you resume.
 7. Never stop, restart, or update the shared \`no-mistakes\` daemon - it is one instance serving
@@ -410,6 +412,7 @@ You drive no-mistakes by responding to its gates, not by implementing fixes.
 Follow the guidance no-mistakes itself provides for the mechanics: it loads when you invoke /no-mistakes, and \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
 When starting no-mistakes, make \`--intent\` preserve all relevant content from this brief's \`# Task\` section plus every later accepted Firstmate requirement, clarification, constraint, exclusion, and supersession, carrying only each requirement's current accepted form; retain direct requirements instead of substituting a diff summary, and exclude generic operational, status, delivery, and other scaffold boilerplate unless it is task-specific.
 Do not hand-edit, commit, or fix findings yourself while a run is active - the pipeline applies every fix.
+While waiting on a gate or CI, poll its state directly instead of leaving a background monitor running: never end a turn with no other activity parked on one, because a turn like that can end your session while the pipeline stays alive waiting for a response nobody will send.
 
 Two firstmate-specific rules layer on top of that guidance:
 - ask-user findings are never yours to answer: escalate to firstmate (rule 6) and stop.
@@ -450,6 +453,7 @@ $CODEGRAPH_SECTION
 $RULE1
 2. Stay inside this worktree; modify nothing outside it.
 3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
+   If this task fixes something a human would see on screen, reproduce it in a real browser with chrome-devtools-axi before your fix and confirm it is gone after, with evidence, rather than relying on tests alone - unless this worktree cannot run the app (it has no local data, env files, or an assigned dev port today), in which case say that explicitly instead of silently skipping the check.
 4. Report status by appending one line:
    \`echo "{state}: {one short line}" >> $STATUS_FILE\`
    States: working, needs-decision, blocked, $PAUSED_VERB, done, failed.
@@ -465,7 +469,8 @@ $RULE1
    cadence instead of treating it as a possible wedge. Use \`blocked:\` when you are stuck and need help.
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
 6. If a decision belongs above the implementation worker (product choices, destructive actions, ask-user findings),
-   append \`needs-decision: {summary of options}\` and stop. Firstmate will apply the configured authority and reply with the decision.
+   append \`needs-decision [key=<slug>]: {summary of options}\` and stop. Firstmate will apply the configured authority and reply with the decision.
+   The optional key token sits BETWEEN the verb and the colon, never after it (grammar owned by \`bin/fm-classify-lib.sh\`).
    A decision or blocker you opened stays open until a \`resolved\` line carrying its exact key lands; a later \`done:\` or \`working:\` line never closes it, even when the answer is what started that work.
    Firstmate's reply normally writes that closing line at answer time; when a blocker or wait clears WITHOUT a firstmate reply, append \`resolved: {how it cleared}\` yourself (same \`[key=<slug>]\` if you opened it with one) as you resume.
 7. Never stop, restart, or update the shared \`no-mistakes\` daemon - it is one instance serving
