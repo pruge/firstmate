@@ -80,7 +80,8 @@ The submit acknowledgement and away-mode supervisor-pane busy guard below still 
 The supervisor guard selects only the detected primary harness's signature rather than a global union of vendor patterns.
 
 `bin/fm-tmux-lib.sh` owns exact type-and-submit mechanics.
-It types a message once and retries Enter only until the composer clears.
+Before typing anything, it checks `fm_tmux_option_list_active`, which consults the shared `fm_composer_option_list_active` classifier (`bin/fm-composer-lib.sh`): a harness-drawn selection list or confirm dialog (an AskUserQuestion-style picker, a trust dialog) is proven active only when the captured tail carries both the harness's footer hint line (for example `Enter to select · ... · Esc to cancel`) and a highlighted numbered row (`❯ 1. ...`) together, because Enter there would pick the highlighted option instead of submitting text. When both signals are present, no keys are sent and `fm-send.sh` refuses with verdict `option-list-active` and a nonzero exit instead of typing. See [`docs/verification/runtime-backends.md`](verification/runtime-backends.md) for the live evidence behind this classifier.
+Otherwise it types a message once and retries Enter only until the composer clears.
 Only a proven empty composer is a positive delivery acknowledgement.
 Text left in established structure remains `pending`, text in ambiguous structure remains unproven, and unreadable or unsafe state remains unknown.
 `fm-send.sh` reports every unconfirmed verdict as a failure instead of retyping or assuming delivery.
@@ -104,6 +105,8 @@ tests/fm-composer-ghost.test.sh
 tests/fm-kimi-harness.test.sh
 tests/fm-muse-harness.test.sh
 tests/fm-tmux-submit-busy.test.sh
+tests/fm-tmux-submit-option-list.test.sh
+tests/fm-composer-lib.test.sh
 tests/fm-bootstrap.test.sh
 ```
 

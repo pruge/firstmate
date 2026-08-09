@@ -30,6 +30,19 @@ zsh
 A persistent parent shell waiting for a child remained reported as the parent process, while a shell that directly execed a simple command changed identity with the process itself.
 Pi and pi-signed 0.82.0 were reverified on 2026-07-27 through real isolated `fm-spawn.sh` launches.
 
+### Claude Code option list (send-into-option-list-picks-option)
+
+Verified live against a freshly-launched real Claude Code 2.1.220 on tmux 3.7b (macOS), 2026-08-09.
+The directory-trust dialog and both AskUserQuestion variants (single-select and multiSelect) replace the idle composer's footer with a hint line naming what Enter does plus an explicit cancel affordance, and draw the currently highlighted row with the same `❯` glyph an empty composer uses, immediately followed by an `<N>. ` list marker.
+
+Trust dialog footer: `Enter to confirm · Esc to cancel`.
+AskUserQuestion footer (both variants): `Enter to select · ↑/↓ to navigate · Esc to cancel`.
+Highlighted row shape: `❯ 1. Option A` (single-select), `❯ 1. [ ] X` (multiSelect).
+
+`fm_composer_option_list_active` (`bin/fm-composer-lib.sh`) requires both the footer-hint line and the highlighted numbered row in the same captured tail before it reports a picker active; `fm_tmux_option_list_active` and `fm_tmux_submit_core` (`bin/fm-tmux-lib.sh`) consult it before typing anything on the tmux text-submit path, so `bin/fm-send.sh` refuses (verdict `option-list-active`, nonzero exit, no keys sent) instead of typing the caller's message and having the retried Enter pick the highlighted option.
+
+Refresh this evidence with `FM_OPTION_LIST_LIVE_E2E=1 tests/fm-send-option-list-guard-live-e2e.test.sh` (opt-in, needs a real `claude` binary and `tmux`) after any Claude Code upgrade; it drives a real AskUserQuestion picker end to end and fails loudly, naming the installed version, if the harness's rendered hint/row shapes have changed.
+
 ### Agent liveness name sources
 
 The earlier record that every harness is observed under its own `#{pane_current_command}` no longer holds and has been replaced by the per-harness evidence below.
