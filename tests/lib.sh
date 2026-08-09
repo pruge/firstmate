@@ -144,6 +144,51 @@ fm_test_reap_orphans() {
 
 fm_test_reap_orphans
 
+# --- shared codegraph stub ---------------------------------------------------
+#
+# fm-spawn.sh refuses a ship/scout spawn when `codegraph` is not on PATH
+# (bin/fm-codegraph-sync-lib.sh, captain override 2026-08-09). Every test that
+# drives a real fm-spawn.sh spawn now needs a `codegraph` stub available, and
+# there are too many such tests, built in too many different ways, to patch
+# one by one. Instead this ONE shared stub is dropped once per test process
+# and folded into every PATH construction convention already in use:
+#   - tests that extend the ambient $PATH (`PATH="$fakebin:$PATH"`) inherit it
+#     automatically, since it is prepended to $PATH right here before any
+#     fixture-specific PATH override runs.
+#   - tests that build a minimal PATH from scratch via the `BASE_PATH=
+#     ${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}` convention pick it
+#     up through FM_TEST_BASE_PATH, defaulted here (only when the environment
+#     has not already set it, so an explicit override still wins).
+# The one deliberate "codegraph is absent" scenario (tests/fm-spawn-codegraph-sync.test.sh)
+# must strip this stub back out rather than build PATH from scratch and
+# forget it exists - use fm_test_path_without_codegraph for that.
+FM_TEST_CODEGRAPH_STUB_DIR=$(fm_test_tmproot fm-codegraph-stub)/fakebin
+mkdir -p "$FM_TEST_CODEGRAPH_STUB_DIR"
+cat > "$FM_TEST_CODEGRAPH_STUB_DIR/codegraph" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+chmod +x "$FM_TEST_CODEGRAPH_STUB_DIR/codegraph"
+PATH="$FM_TEST_CODEGRAPH_STUB_DIR:$PATH"
+export PATH
+: "${FM_TEST_BASE_PATH:="$FM_TEST_CODEGRAPH_STUB_DIR:/usr/bin:/bin:/usr/sbin:/sbin"}"
+export FM_TEST_BASE_PATH
+
+# fm_test_path_without_codegraph: $PATH with every directory that resolves a
+# `codegraph` executable removed, including the shared stub above. Use this
+# to build the one deliberate "codegraph is absent" scenario instead of
+# constructing PATH from scratch, which would silently reintroduce the stub
+# through inheritance.
+fm_test_path_without_codegraph() {
+  local dir sanitized=
+  local IFS=:
+  for dir in $PATH; do
+    [ -x "$dir/codegraph" ] && continue
+    sanitized="$sanitized:$dir"
+  done
+  printf '%s\n' "${sanitized#:}"
+}
+
 # --- fakebin / PATH shims ---------------------------------------------------
 #
 # fm_fakebin <dir> creates <dir>/fakebin and echoes it; prepend it to PATH to
