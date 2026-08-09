@@ -10,6 +10,24 @@ set -u
 # which the no-mistakes gate runs from a gate worktree, must be exempt).
 export FM_GATE_REFUSE_BYPASS=1
 
+# Same reasoning covers the codegraph spawn gate (bin/fm-codegraph-sync-lib.sh,
+# captain override 2026-08-09): fm-spawn.sh refuses a ship/scout spawn when
+# `codegraph` is not on PATH, and these suites drive the real fm-spawn.sh
+# without sourcing tests/lib.sh's shared stub. Drop an equivalent stub here,
+# prepended to PATH before any test below extends the ambient PATH, so every
+# real fm-spawn.sh invocation in this family resolves `codegraph` too. Not
+# registered for trap-based cleanup: every caller of this file installs its
+# own `trap cleanup_all EXIT`, which would clobber one set here.
+HERDR_TEST_CODEGRAPH_STUB_DIR=$(mktemp -d "${TMPDIR:-/tmp}/fm-herdr-codegraph-stub.XXXXXX")/fakebin
+mkdir -p "$HERDR_TEST_CODEGRAPH_STUB_DIR"
+cat > "$HERDR_TEST_CODEGRAPH_STUB_DIR/codegraph" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+chmod +x "$HERDR_TEST_CODEGRAPH_STUB_DIR/codegraph"
+PATH="$HERDR_TEST_CODEGRAPH_STUB_DIR:$PATH"
+export PATH
+
 HERDR_TEST_SAFETY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=/dev/null
 . "$HERDR_TEST_SAFETY_DIR/bin/fm-herdr-lab.sh"
