@@ -918,6 +918,28 @@ test_codegraph_setup_block_present_in_scout_and_ship() {
   pass "fm-brief: scout and ship briefs both carry the CodeGraph adoption block"
 }
 
+test_ship_brief_claims_ticket_on_branch_scout_does_not() {
+  local brief
+
+  FM_HOME="$BRIEF_HOME" "$ROOT/bin/fm-brief.sh" brief-claim-ship alpha --mode no-mistakes >/dev/null 2>&1 \
+    || fail "fm-brief.sh ship scaffold exited non-zero"
+  brief="$BRIEF_HOME/data/brief-claim-ship/brief.md"
+  assert_present "$brief" "ship brief was not scaffolded"
+  assert_grep "flipped to \`claimed\`" "$brief" \
+    "ship brief must instruct the worker to claim a named ticket right after branching"
+  assert_grep "Skip this entirely when the task names no ticket" "$brief" \
+    "ship brief must exempt ticket-less tasks rather than sending the worker looking for one"
+
+  FM_HOME="$BRIEF_HOME" "$ROOT/bin/fm-brief.sh" brief-claim-scout alpha --scout >/dev/null 2>&1 \
+    || fail "fm-brief.sh scout scaffold exited non-zero"
+  brief="$BRIEF_HOME/data/brief-claim-scout/brief.md"
+  assert_present "$brief" "scout brief was not scaffolded"
+  assert_no_grep "flipped to \`claimed\`" "$brief" \
+    "scout brief must not carry the ticket-claim-on-start instruction (a scout delivers a report, not a branch)"
+
+  pass "fm-brief: ship briefs claim a named ticket right after branching, scout briefs do not"
+}
+
 test_script_parses
 test_no_heredoc_in_command_substitution
 test_help_includes_entire_header
@@ -939,6 +961,7 @@ test_pause_verb_override_renders_all_brief_scaffolds
 test_scout_and_secondmate_load_decision_hold_policy
 test_scout_and_secondmate_scaffold
 test_codegraph_setup_block_present_in_scout_and_ship
+test_ship_brief_claims_ticket_on_branch_scout_does_not
 test_decision_key_position_pinned_in_ship_and_scout
 test_codegraph_section_overrides_global_skip_rule_and_scopes_index
 test_codegraph_section_locates_the_index_and_forbids_a_second_one

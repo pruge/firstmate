@@ -41,6 +41,10 @@
 # to launch a ship task whose explicit --mode disagrees, so an adjusted brief and the
 # recorded task metadata cannot drift apart.
 # Ship briefs begin with a worktree-isolation assertion before the branch step.
+# The branch step itself tells the worker to claim any named ticket right after
+# branching (a standalone "Status: claimed" commit), leaving the later flip to
+# "resolved" where it already lived: the implementation commit. This never
+# applies to scout scaffolds or to ship tasks that name no ticket.
 # --mode is refused on scout and secondmate scaffolds: a scout's deliverable is a
 # report rather than a merge, and a charter is not a delivery contract.
 # There is no --yolo flag here. The worker never owns approval decisions, so yolo is
@@ -480,7 +484,9 @@ You are in a disposable git worktree of $REPO, at a detached HEAD on a clean def
 The path check is authoritative: \`git rev-parse --git-dir\` and \`git rev-parse --git-common-dir\` can help inspect the repo, but they do not prove you are outside the primary checkout.
 If the top-level path is the primary checkout or not the worktree you were launched in, STOP - do not branch or commit here - append \`blocked: launched in primary checkout, not an isolated worktree\` to the status file and stop.
 
-1. First action: create your branch: \`git checkout -b fm/$ID\`$SETUP2
+1. First action: create your branch: \`git checkout -b fm/$ID\`.
+   If the task names one or more tracked tickets, immediately make a commit containing only each named ticket's \`Status:\` line flipped to \`claimed\` - this marks the start, distinct from the implementation commit that later flips the same line to \`resolved (YYYY-MM-DD)\` at the end.
+   Skip this entirely when the task names no ticket; never go looking for one.$SETUP2
 
 $CODEGRAPH_SECTION
 
