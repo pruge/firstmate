@@ -779,11 +779,34 @@ test_codegraph_section_locates_the_index_and_forbids_a_second_one() {
     "CodeGraph section must forbid creating a second index next to an existing one"
   assert_grep "the copy you are not syncing answers with outdated symbols as if they were current" "$brief" \
     "CodeGraph section must say WHY a second index is harmful, not just that it is banned"
-  assert_grep "Init only when the listing above finds none at all" "$brief" \
-    "CodeGraph section must confine init to the repo-has-no-index-anywhere case"
+  assert_grep "Init only when the listing above finds none at all, and then init one index at the repository root" "$brief" \
+    "CodeGraph section must confine init to the repo-has-no-index-anywhere case, and default to a single index at the root"
   assert_no_grep "run \`codegraph init\` once in this worktree" "$brief" \
     "CodeGraph section must no longer tell the crew to init the worktree unconditionally"
+  assert_no_grep "symbols compete with the ones you actually need" "$brief" \
+    "CodeGraph section must not claim splitting avoids cross-subtree symbol competition - measurement refuted it (docs/verification/codegraph-index-scope.md)"
+  assert_no_grep "no competition" "$brief" \
+    "CodeGraph section must not replace the refuted competition claim with an unqualified opposite claim either - the measurement's scope is one repo"
   pass "fm-brief: CodeGraph section locates the existing index and forbids initing a second one"
+}
+
+# The measurement in docs/verification/codegraph-index-scope.md found no case of cross-subtree
+# symbol competition, but it also found that a question spanning more than one existing index
+# can come back empty or incomplete when scoped to just one of them (Shape 2 in the report:
+# a definition-and-consumer question failed when scoped to a single package-level index). The
+# brief text must carry that forward as guidance to query every covering index for cross-subtree
+# work, not just pick one, even though it must not resurrect the refuted competition claim.
+test_codegraph_section_covers_cross_subtree_work_across_existing_indexes() {
+  local home id brief
+  home="$TMP_ROOT/codegraph-cross-subtree-home"
+  mkdir -p "$home/data"
+  id="brief-codegraph-cross-subtree"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "ship brief was not scaffolded"
+  assert_grep "if your task's work spans more than one of them, query each covering index in turn instead of picking just one" "$brief" \
+    "CodeGraph section must tell the crew to query every covering index, not just one, when the task's work spans several existing indexes"
+  pass "fm-brief: CodeGraph section tells the crew to query every covering index for cross-subtree work"
 }
 
 test_no_mistakes_dod_splits_gate_wait_into_three_branches() {
@@ -919,6 +942,7 @@ test_codegraph_setup_block_present_in_scout_and_ship
 test_decision_key_position_pinned_in_ship_and_scout
 test_codegraph_section_overrides_global_skip_rule_and_scopes_index
 test_codegraph_section_locates_the_index_and_forbids_a_second_one
+test_codegraph_section_covers_cross_subtree_work_across_existing_indexes
 test_no_mistakes_dod_splits_gate_wait_into_three_branches
 test_ship_dod_requires_browser_verification_with_precondition
 test_status_protocol_covers_captain_check_and_captain_direct_work
