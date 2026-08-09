@@ -56,12 +56,16 @@
 # self-governance section when a touched project AGENTS.md lacks it.
 # Scout and ship briefs both carry a fixed CodeGraph section. It overrides the
 # general "no `.codegraph/` directory, so skip CodeGraph" environment instruction,
-# because a fresh task worktree never has that directory and the brief itself is
-# the indexing decision that instruction defers: run `codegraph init` once (it
-# typically finishes in single-digit seconds, so cost is not a reason to skip it).
-# When the repo holds several unrelated subtrees, scope init to the one subtree
-# the task concerns, name that subtree in the report or status, and use that
-# same path for every later `codegraph` command (`status`, `explore`, `sync`).
+# because fm-spawn.sh already matched the worktree's indexes to its code before
+# the first turn (bin/fm-codegraph-sync-lib.sh owns that rule), so an index is
+# normally present and current. The section has the crewmate LOCATE that index
+# before querying - it need not sit at the worktree root, since codegraph
+# resolves a query path upward but never downward - and use that same path for
+# every later `codegraph` command (`status`, `explore`, `sync`). It forbids
+# initing beside an index that already exists, because the second index would
+# answer nearby queries with stale symbols; init is for the case where the repo
+# has none at all, scoped to the one subtree the task concerns when the repo
+# holds several unrelated ones.
 # Self-check with `codegraph status` against that path: no index there means
 # the path is wrong, re-check it, while an index that exists but is trivially
 # small for what was indexed means those languages are unsupported (shell and
@@ -314,9 +318,10 @@ HERDR_SECTION=${HERDR_SECTION%$'\n'}
 fi
 
 IFS= read -r -d '' CODEGRAPH_SECTION <<'EOF' || true
-**Prefer CodeGraph over grep for exploring code.** This brief overrides the general "no `.codegraph/`, skip CodeGraph" environment instruction for this task: a fresh task worktree never has one, so that instruction's deferred "indexing is the user's decision" is this brief deciding it - build the index rather than skipping it. If a `codegraph` command exists on PATH, run `codegraph init` once in this worktree before starting work - it builds a local index that every later `codegraph` call reuses, so init never needs re-running, and it typically completes in single-digit seconds even on a large repo, not minutes, so cost is not a reason to skip it.
-`codegraph init` accepts a path: if your task concerns one subtree of a repo that holds multiple unrelated ones (for example separate frontend/backend, web/mobile, or per-service directories that don't call into each other), scope init to the subtree your task actually concerns rather than the repository root, and say in your report or status which subtree you chose - indexing everything together makes an unrelated subtree's symbols compete with the ones you actually need. Once you've chosen a path, use that same path for every later `codegraph` command in this task - `status`, `explore`, and `sync` alike - not just `init`.
-After init, run `codegraph status` against that same path. These are two different conclusions, so do not conflate them: if it reports no index there, the path is wrong - re-check it before concluding anything about CodeGraph. Only when an index genuinely exists at that path but has a trivially small node count for what you indexed are that subtree's languages unsupported by CodeGraph - skip it entirely and use ordinary tools instead. Shell scripts and Markdown are not supported languages, so a shell-and-docs repo (firstmate itself is one) will produce a near-empty graph; that is expected, not an error.
+**Prefer CodeGraph over grep for exploring code.** This brief overrides the general "no `.codegraph/`, skip CodeGraph" environment instruction for this task: firstmate already matched this worktree's CodeGraph index to its checked-out code before your first turn, so an index is normally present and current - use it rather than skipping it.
+Find where that index lives before you query, because it does not have to sit at the worktree root: `codegraph` resolves a query path upward to the nearest enclosing `.codegraph/` but never downward, so a repository whose code lives in a subdirectory keeps its index beside that code. List them with `find . \( -name .git -o -name node_modules \) -prune -o -type d -name .codegraph -print -prune`, then use that directory's path for every `codegraph` command in this task - `status`, `explore`, and `sync` alike. If the listing shows several, pick the one covering the subtree your task actually concerns and say in your report or status which you chose.
+Do not run `codegraph init` beside an index that already exists, including at the repository root when the existing one sits below it: a second index makes each query answer from whichever copy is nearest the path you pass, and the copy you are not syncing answers with outdated symbols as if they were current. Init only when the listing above finds none at all - and then, in a repo holding several unrelated subtrees (for example separate frontend/backend, web/mobile, or per-service directories that don't call into each other), init the one subtree your task concerns rather than the repository root, since indexing everything together makes an unrelated subtree's symbols compete with the ones you actually need.
+Run `codegraph status` against the path you chose. These are two different conclusions, so do not conflate them: if it reports no index there, the path is wrong - re-check it before concluding anything about CodeGraph. Only when an index genuinely exists at that path but has a trivially small node count for what you indexed are that subtree's languages unsupported by CodeGraph - skip it entirely and use ordinary tools instead. Shell scripts and Markdown are not supported languages, so a shell-and-docs repo (firstmate itself is one) will produce a near-empty graph; that is expected, not an error.
 When the index is real, reach for `codegraph explore "<symbols or question>"` (same path) BEFORE grep, find, or opening files to locate or understand code - one call answers most structural questions. Trust what it returns: the source it prints is already read, so do not re-grep to confirm it.
 The index does not follow your edits on its own when you drive CodeGraph from the shell, so run `codegraph sync` (same path) after you change files and before the next `codegraph explore`, or read the files you just edited directly. If a response warns that a file is pending, read that file directly too.
 Never commit the index: `.codegraph/` is machine-local and large. If this repo does not already ignore it, leave it untracked and never `git add -A` - do not add the ignore entry as a side change to an unrelated task.

@@ -52,7 +52,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | [`fm-project-origin-lib.sh`](../bin/fm-project-origin-lib.sh) | Accepted origin-form owner shared by both remote provisioning boundaries |
 | `fm-spawn.sh`            | Spawn crewmates, scouts, `id=repo` batches, and secondmates on the resolved harness and runtime backend |
 | `fm-worktree-runtime-lib.sh` | Copy a project's gitignored dev database and env files into a settled ship/scout worktree, then validate and write firstmate's assigned dev port pair |
-| `fm-codegraph-sync-lib.sh` | Match a spawned ship/scout worktree's local CodeGraph index to its checked-out code; refuses the spawn if codegraph is not installed, warns instead of blocking on a failed or timed-out init/sync |
+| `fm-codegraph-sync-lib.sh` | Match a spawned ship/scout worktree's local CodeGraph indexes to its checked-out code, syncing each where it already lives and initing the root only when the worktree holds none; refuses the spawn if codegraph is not installed, warns instead of blocking on a failed or timed-out init/sync |
 | `fm-backend.sh`          | Runtime-backend selection, meta helpers, selector resolution, and operation dispatch |
 | `fm-backend-hometag-lib.sh` | Shared per-installation home-tag derivation for zellij tab and cmux workspace titles |
 | `fm-composer-lib.sh`     | Single fleet-wide owner of composer-content classification for all backends          |

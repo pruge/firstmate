@@ -123,8 +123,10 @@
 #   Ship/scout spawns refuse to launch unless the resolved task path is a real
 #   git worktree root distinct from the primary project checkout.
 #   Right after that worktree is validated, a ship/scout spawn matches its local
-#   CodeGraph index to the checked-out code (fm_spawn_codegraph_sync: init when
-#   no `.codegraph/` exists there yet, sync otherwise) before the brief is sent.
+#   CodeGraph indexes to the checked-out code (fm_spawn_codegraph_sync: sync
+#   every existing index where it already lives, wherever under the worktree it
+#   sits, and init the root only when there is none anywhere) before the brief
+#   is sent. bin/fm-codegraph-sync-lib.sh owns that rule in full.
 #   A missing codegraph binary refuses the spawn outright with an actionable
 #   install command (captain override, 2026-08-09) - the one deliberate spawn
 #   gate here. Once codegraph is installed, a failing init/sync or a bounded

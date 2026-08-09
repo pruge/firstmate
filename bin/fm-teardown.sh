@@ -1097,8 +1097,11 @@ validate_worktree_teardown_safety() {
   fi
   # Only untracked machine-local artifacts firstmate itself writes or directs are
   # exempt, because they are rebuildable and are never a work product: the claude
-  # settings and turn-end pointers spawn drops, and the .codegraph/ index the
-  # generated brief has the worker build and never commit (see bin/fm-brief.sh).
+  # settings and turn-end pointers spawn drops, and the .codegraph/ index spawn
+  # itself builds and never commits (see bin/fm-codegraph-sync-lib.sh). Only a
+  # root .codegraph/ is exempt: an index kept beside code in a subdirectory is
+  # the project's own, predates the spawn, and is normally gitignored, so it
+  # does not reach this listing at all.
   # Anything else untracked is the agent's own work and MUST still refuse teardown.
   dirty=$(printf '%s\n' "$dirty_raw" | grep -vE '^\?\? (\.claude/|\.codegraph/|\.fm-(grok|kimi)-turnend$)' | head -1 || true)
 
