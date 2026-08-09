@@ -1817,7 +1817,7 @@ test_projection_close_death_escalates_sigkill_after_sighup_survival() {
   printf '%s\n' '{"result":{"tabs":[{"tab_id":"w2:t2","workspace_id":"w2"}]}}' > "$resp/4.out"
   printf '%s\n' '{"result":{"panes":[{"pane_id":"w2:p2","tab_id":"w2:t2"}]}}' > "$resp/5.out"
   cp "$resp/1.out" "$resp/6.out"
-  bash -c 'trap "" HUP; sleep 300' & bgpid=$!
+  bash -c 'trap "" HUP; exec sleep 300' & bgpid=$!
   death_process_info_fixture w2:p2 "$bgpid" > "$resp/7.out"
   printf '%s\n' '{"error":{"code":"internal_error","message":"transient failure"}}' > "$resp/8.out"
   printf '%s\n' '{"result":{"pane":{"pane_id":"w2:p2"}}}' > "$resp/9.out"
@@ -1853,7 +1853,7 @@ test_projection_close_death_failure_falls_back_to_plain_close() {
   printf '%s\n' '{"result":{"tabs":[{"tab_id":"w2:t2","workspace_id":"w2"}]}}' > "$resp/4.out"
   printf '%s\n' '{"result":{"panes":[{"pane_id":"w2:p2","tab_id":"w2:t2"}]}}' > "$resp/5.out"
   cp "$resp/1.out" "$resp/6.out"
-  bash -c 'trap "" HUP; sleep 300' & bgpid=$!
+  bash -c 'trap "" HUP; exec sleep 300' & bgpid=$!
   death_process_info_fixture w2:p2 "$bgpid" > "$resp/7.out"
   printf '%s\n' '{"result":{"pane":{"pane_id":"w2:p2"}}}' > "$resp/8.out"
   printf '%s\n' '{"result":{"pane":{"pane_id":"w2:p2"}}}' > "$resp/9.out"
@@ -1904,6 +1904,7 @@ test_projection_close_death_still_restores_a_stolen_focus() {
     FM_BACKEND_HERDR_DEATH_CLOSE_POLLS=2 \
     bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_projection_close_pane_focus_preserving fmtest w2:p2' "$ROOT" 2>&1)
   status=$?
+  kill "$bgpid" 2>/dev/null || true; wait "$bgpid" 2>/dev/null || true
   [ "$status" -eq 0 ] || fail "the pane-death close with a restored backstop should succeed: $out"
   assert_contains "$(cat "$log")" $'tab\x1ffocus\x1fw1:t1' "the backstop did not restore the exact prior tab"
   pass "herdr presentation cleanup: the exact-tab restore remains the backstop behind the pane-death close"
@@ -1922,7 +1923,7 @@ test_projection_close_death_never_sigkills_a_reused_pid() {
   # The original shell survives SIGHUP; by SIGKILL time the pane's process
   # information shows a DIFFERENT shell pid, modeling the original pid having
   # been reused by an unrelated process the pane no longer owns.
-  bash -c 'trap "" HUP; sleep 300' & bgpid=$!
+  bash -c 'trap "" HUP; exec sleep 300' & bgpid=$!
   death_process_info_fixture w2:p2 "$bgpid" > "$resp/7.out"
   cp "$resp/3.out" "$resp/8.out"   # SIGHUP poll 1: pane still present
   cp "$resp/3.out" "$resp/9.out"   # SIGHUP poll 2: pane still present
@@ -1966,7 +1967,7 @@ assert_projection_close_failed_removal_rolls_back_the_reposition() {
   # shellcheck disable=SC2016 # $defs is a literal JSON Schema key.
   printf '%s\n' '{"schemas":{"request":{"oneOf":[{"properties":{"method":{"const":"workspace.move"}}}],"$defs":{"WorkspaceMoveParams":{"required":["workspace_id","insert_index"],"properties":{"insert_index":{"type":"integer"}}}}}}}' > "$resp/8.out"
   printf '%s\n' '{"sessions":[{"name":"fmtest","running":true,"socket_path":"/tmp/fmtest.sock"}]}' > "$resp/9.out"
-  bash -c 'trap "" HUP; sleep 300' & bgpid=$!
+  bash -c 'trap "" HUP; exec sleep 300' & bgpid=$!
   death_process_info_fixture w1:p1 "$bgpid" > "$resp/10.out"
   if [ "$mode" = pane-gone-workspace-present ]; then
     printf '%s\n' '{"error":{"code":"pane_not_found"}}' > "$resp/11.out"
@@ -2069,6 +2070,7 @@ test_kill_emptying_non_focused_uses_pane_death() {
   [ ! -e "$lock_held" ] || fail "the generic kill retained its presentation lock"
   assert_not_contains "$(cat "$log")" $'pane\x1fclose' "an emptying non-focused kill used the focus-unsafe explicit close"
   assert_not_contains "$(cat "$log")" $'tab\x1ffocus' "an emptying non-focused kill moved focus"
+  kill "$bgpid" 2>/dev/null || true; wait "$bgpid" 2>/dev/null || true
   pass "fm_backend_herdr_kill: one session lock covers the focus-safe emptying removal"
 }
 
@@ -4198,6 +4200,40 @@ test_wait_transition_clean_timeout_returns_1() {
   pass "fm_backend_herdr_wait_transition: stock macOS Bash clean timeout closes fd 9 and returns 1"
 }
 
+# test_full_run_leaves_no_orphaned_sleep_processes: this suite's own fixtures
+# stand in for a live pane shell with `sleep 300 & bgpid=$!` (and, for the
+# SIGHUP-survival cases, a `bash -c 'trap "" HUP; ...'` wrapper around it), then
+# must reap that process before the test returns. A wrapper that forks a
+# `sleep` child instead of exec-ing into it, or a case that forgets the kill/wait
+# entirely, leaves that child running as a ppid-1 orphan holding this file's own
+# stdout/stderr open - invisible to the test's own exit status, but fatal to any
+# pipe reader (fm-test-run.sh's `| tee`) waiting on EOF, which then hangs for
+# the sleep's full duration. Runs the real file as a subprocess and checks the
+# live process table for leaked children, never this file's own source.
+test_full_run_leaves_no_orphaned_sleep_processes() {
+  local self before_pids after_pids pid ppid_of leaked=""
+  self="$ROOT/tests/fm-backend-herdr.test.sh"
+  if [ -n "${FM_HERDR_TEST_NO_RECURSE:-}" ]; then
+    pass "fm-backend-herdr.test.sh: orphan-check subprocess does not re-nest itself"
+    return
+  fi
+  before_pids=$(pgrep -f '^sleep 300$' 2>/dev/null | sort -u)
+  FM_HERDR_TEST_NO_RECURSE=1 bash "$self" >/dev/null 2>&1
+  after_pids=$(pgrep -f '^sleep 300$' 2>/dev/null | sort -u)
+  for pid in $after_pids; do
+    case " $before_pids " in
+      *" $pid "*) continue ;;
+    esac
+    ppid_of=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+    [ "$ppid_of" = "1" ] || continue
+    leaked="$leaked $pid"
+    kill -9 "$pid" 2>/dev/null || true
+  done
+  [ -z "$leaked" ] \
+    || fail "a full run left orphaned (ppid=1) sleep processes holding its stdout/stderr open:$leaked"
+  pass "fm-backend-herdr.test.sh: a full run leaves no orphaned background sleep processes"
+}
+
 # shellcheck source=bin/fm-backend.sh
 . "$ROOT/bin/fm-backend.sh"
 
@@ -4372,3 +4408,4 @@ test_wait_transition_stream_absorb_clears_then_timeout
 test_wait_transition_reader_failure_returns_2
 test_wait_transition_bad_ack_returns_2_and_cleans_up
 test_wait_transition_clean_timeout_returns_1
+test_full_run_leaves_no_orphaned_sleep_processes
