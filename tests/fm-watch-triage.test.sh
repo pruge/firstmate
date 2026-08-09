@@ -21,9 +21,14 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/wake-helpers.sh"
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-classify-lib.sh"
+# fm_pr_poll_prepare/fm_pr_poll_publish_prepared - used to arm a real, valid PR
+# merge-watch fixture for the merge_watch_absorbs_done stale-exemption tests.
+# shellcheck source=/dev/null
+. "$ROOT/bin/fm-pr-lib.sh"
 
 WATCH="$ROOT/bin/fm-watch.sh"
 DRAIN="$ROOT/bin/fm-wake-drain.sh"
+PR_POLL_TEMPLATE="$ROOT/bin/fm-pr-poll.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-watch-triage-tests)
 
@@ -1968,6 +1973,115 @@ test_afk_paused_changed_pane_hands_off_plain_stale() {
   pass "AFK changed paused panes hand off plain stale identities for daemon-owned pause triage"
 }
 
+# --- armed PR merge watch on a done crew: pane staleness never fires --------
+# Regression for the repeated "stale:" wakes captain observed on a PR that was
+# already green and merge-poll-armed (2026-08 codegraph-sync-subdir-index):
+# once a captain-relevant "done: ... checks green" status line makes a stale
+# hash terminal, stale_is_terminal surfaces on every NEW hash unless the crew
+# is provably working - but a done, merge-armed crew is never "working", so an
+# idle pane that keeps changing (a spinner, a clock) resurfaced roughly every
+# poll despite the merge watch's own "check:" wake already covering the wait.
+# merge_watch_absorbs_done exempts this exact case from pane staleness
+# entirely, keyed on REAL state (an artifacts-valid armed poll AND
+# fm-crew-state.sh reporting done), never on the task name or a status-log verb.
+arm_pr_merge_watch() {  # <state> <id> <url> <number>
+  local state=$1 id=$2 url=$3 number=$4
+  fm_pr_poll_prepare "$state" "$id" github "$url" github.com o/r "$number" "$PR_POLL_TEMPLATE" \
+    || return 1
+  fm_pr_poll_publish_prepared
+}
+
+test_pr_merge_watch_armed_done_absorbed_across_changing_panes() {
+  local dir state fakebin out window url key pid i
+  dir=$(make_case pr-merge-watch-armed-done); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"
+  window="test:fm-prwatch"
+  url="https://github.com/o/r/pull/42"
+  fm_write_meta "$state/prwatch.meta" "window=$window" "kind=ship" "pr=$url"
+  printf 'done: PR %s checks green\n' "$url" > "$state/prwatch.status"
+  printf '%s' "$(seen_sig "$state/prwatch.status")" > "$state/.seen-prwatch_status"
+  arm_pr_merge_watch "$state" prwatch "$url" 42 \
+    || fail "could not arm the merge-watch fixture for the armed-done absorb test"
+  export FM_FAKE_CREW_STATE_prwatch='state: done · source: run-step · checks green: PR ready for review (still monitoring for merge/close)'
+
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  i=0
+  printf 'idle pane %s' "$i" > "$dir/pane.txt"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$dir/pane.txt" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  while [ "$i" -lt 5 ]; do
+    i=$((i + 1))
+    printf 'idle pane %s' "$i" > "$dir/pane.txt"
+    sleep 0.3
+  done
+  if ! kill -0 "$pid" 2>/dev/null; then
+    wait "$pid" 2>/dev/null || true
+    unset FM_FAKE_CREW_STATE_prwatch
+    fail "watcher exited for a done crew whose PR merge watch is armed, despite a repeatedly changing pane: $(cat "$out")"
+  fi
+  [ ! -s "$out" ] || { reap "$pid"; unset FM_FAKE_CREW_STATE_prwatch; fail "an armed done merge watch printed a wake reason despite the changing pane"; }
+  [ ! -s "$state/.wake-queue" ] || { reap "$pid"; unset FM_FAKE_CREW_STATE_prwatch; fail "an armed done merge watch enqueued a wake despite the changing pane"; }
+  [ ! -e "$state/.hash-$key" ] || fail "an exempted window should never reach pane hashing at all"
+  reap "$pid"
+  unset FM_FAKE_CREW_STATE_prwatch
+  pass "a done crew whose PR merge watch is armed never triggers pane-staleness wakes, even as its idle pane keeps changing"
+}
+
+test_pr_merge_watch_done_without_armed_poll_still_surfaces_stale() {
+  local dir state fakebin out capture_file window key pane_hash sig pid
+  dir=$(make_case pr-merge-watch-done-unarmed); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  window="test:fm-doneunarmed"
+  printf 'finished, awaiting review' > "$capture_file"
+  fm_write_meta "$state/doneunarmed.meta" "window=$window" "kind=ship"
+  printf 'done: PR https://example.test/pr/9\n' > "$state/doneunarmed.status"
+  sig=$(seen_sig "$state/doneunarmed.status"); printf '%s' "$sig" > "$state/.seen-doneunarmed_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "finished, awaiting review")
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  export FM_FAKE_CREW_STATE_doneunarmed='state: done · source: run-step · checks green: PR ready for review (still monitoring for merge/close)'
+
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 40 || { unset FM_FAKE_CREW_STATE_doneunarmed; fail "watcher did not surface a stale pane on a done crew with NO armed merge watch"; }
+  grep -Fx "stale: $window" "$out" >/dev/null || { unset FM_FAKE_CREW_STATE_doneunarmed; fail "watcher did not print the expected stale wake for the unarmed done crew"; }
+  unset FM_FAKE_CREW_STATE_doneunarmed
+  pass "a done crew with NO armed merge watch is never exempted from pane staleness (the exemption requires a genuinely armed poll)"
+}
+
+test_pr_merge_watch_armed_not_done_still_surfaces_stale() {
+  local dir state fakebin out capture_file window url key pane_hash sig pid
+  dir=$(make_case pr-merge-watch-armed-failed); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  window="test:fm-armedfailed"
+  url="https://github.com/o/r/pull/7"
+  printf 'error: pipeline crashed' > "$capture_file"
+  fm_write_meta "$state/armedfailed.meta" "window=$window" "kind=ship" "pr=$url"
+  printf 'failed: pipeline crashed\n' > "$state/armedfailed.status"
+  sig=$(seen_sig "$state/armedfailed.status"); printf '%s' "$sig" > "$state/.seen-armedfailed_status"
+  arm_pr_merge_watch "$state" armedfailed "$url" 7 \
+    || fail "could not arm the merge-watch fixture for the armed-but-not-done regression"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "error: pipeline crashed")
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  export FM_FAKE_CREW_STATE_armedfailed='state: failed · source: run-step · run failed'
+
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 40 || { unset FM_FAKE_CREW_STATE_armedfailed; fail "watcher did not surface a stale pane on an armed-but-failed crew"; }
+  grep -Fx "stale: $window" "$out" >/dev/null || { unset FM_FAKE_CREW_STATE_armedfailed; fail "watcher did not print the expected stale wake for the armed-but-failed crew"; }
+  unset FM_FAKE_CREW_STATE_armedfailed
+  pass "an armed merge watch never exempts a crew whose authoritative state is not done (armed-but-failed still surfaces)"
+}
+
 test_signal_reason_is_actionable_classifier
 test_stale_is_terminal_classifier
 test_scan_captain_relevant_statuses_classifier
@@ -2018,3 +2132,6 @@ test_heartbeat_backstop_surfaces_unsurfaced_status
 test_beacon_stays_fresh_while_absorbing
 test_afk_present_reverts_watcher_to_one_shot
 test_afk_paused_changed_pane_hands_off_plain_stale
+test_pr_merge_watch_armed_done_absorbed_across_changing_panes
+test_pr_merge_watch_done_without_armed_poll_still_surfaces_stale
+test_pr_merge_watch_armed_not_done_still_surfaces_stale

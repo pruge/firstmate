@@ -40,6 +40,13 @@
 #                          count, and demand-deep-inspection marker, for human
 #                          inspection only - never an automatic interrupt,
 #                          signal, or restart of the worker or its tool process.
+#                          A window is skipped from pane staleness entirely
+#                          (no "stale:" wake at all) while its PR merge watch
+#                          is genuinely armed AND its authoritative state is
+#                          done - see merge_watch_absorbs_done - since the
+#                          armed poll's own "check:" wake already owns that
+#                          wait; a still-working, parked, blocked, failed, or
+#                          unarmed done window is never exempted.
 #   check: <script>: <out> authenticated check output, always actionable
 #   check: process-event result captured: <keys>
 #                          a durably captured process-to-event result is queued
@@ -436,6 +443,33 @@ clear_pause_tracking() {  # <window>
   key=${key//./_}
   clear_pause_state "$win"
   rm -f "$STATE/.stale-$key" "$STATE/.stale-since-$key" "$STATE/.wedge-escalations-$key"
+}
+
+# 0 when a task's PR merge watch is genuinely armed (a validated
+# check.sh/pr-poll/pr-poll-registration triple bound to this EXACT task, via
+# fm_pr_poll_artifacts_valid - the same integrity check the check-sweep itself
+# trusts) AND fm-crew-state.sh's authoritative current state is done. Both
+# conditions are read fresh from real state every call, never inferred from a
+# task name, a status-log verb, or a cached verdict: a still-running, parked,
+# blocked, failed, or unknown crew, or a done crew whose poll was never armed
+# or has since been revoked/retired (e.g. after merge), returns 1 and falls
+# straight through to ordinary stale handling.
+#
+# Exists because bin/fm-pr-poll.sh's own "check:" wake is already the
+# authoritative signal for "the captain still needs to merge this" - pane
+# staleness on the same idle window (a spinner, a clock, a shifting prompt)
+# was firing its own redundant "stale:" wake roughly every poll, since a
+# captain-relevant `done: ... checks green` status line makes every distinct
+# pane hash surface immediately (see stale_is_terminal below) unless the crew
+# is provably working, which a merged-and-waiting crew never is.
+merge_watch_absorbs_done() {  # <task>
+  local task=$1 line state
+  [ -n "$task" ] || return 1
+  fm_pr_poll_artifacts_valid "$STATE" "$task" "$SCRIPT_DIR/fm-pr-poll.sh" || return 1
+  line=$("$FM_CREW_STATE_BIN" "$task" 2>/dev/null) || return 1
+  case "$line" in state:*) ;; *) return 1 ;; esac
+  state=${line#state: }; state=${state%% *}
+  case "$state" in done) return 0 ;; *) return 1 ;; esac
 }
 
 # Reconcile a declared pause or captain-held status with authoritative crew state.
@@ -1015,6 +1049,12 @@ EOF
       clear_pause_tracking "$w"
     fi
     if [ "$kind" = secondmate ] && ! status_is_paused "$last"; then
+      continue
+    fi
+    # An armed PR merge watch already owns this window's wait: skip pane
+    # staleness entirely rather than surface a redundant "stale:" wake on top
+    # of the check-sweep's own "check:" wake. See merge_watch_absorbs_done.
+    if merge_watch_absorbs_done "$task"; then
       continue
     fi
     tail40=$(fm_backend_capture "$(window_backend "$w")" "$w" 40 "$(window_label "$w")" 2>/dev/null) || continue
