@@ -133,6 +133,112 @@ test_real_text_is_pending() {
   pass "fm_composer_classify_content: real unsubmitted text reads pending (including a popup argument-hint fill)"
 }
 
+# --- fm_composer_option_list_active: picker-overlay detection ---------------
+# Fixtures are the plain-text tail captured from a real, freshly-launched
+# Claude Code 2.1.220 (tmux `capture-pane -p`), verified live for task
+# send-into-option-list-picks-option (docs/verification/runtime-backends.md).
+
+option_list() { fm_composer_option_list_active; }
+
+test_askuserquestion_single_select_is_active() {
+  printf '%s\n' \
+    '────────────────────────────────────────────────────────────' \
+    ' ☐ A or B ' \
+    '' \
+    'Which option would you like to go with?' \
+    '' \
+    '❯ 1. Option A' \
+    '     Pick the first option, A.' \
+    '  2. Option B' \
+    '     Pick the second option, B.' \
+    '  3. Type something.' \
+    '────────────────────────────────────────────────────────────' \
+    '  4. Chat about this' \
+    '' \
+    'Enter to select · ↑/↓ to navigate · Esc to cancel' \
+    | option_list || fail "a real single-select AskUserQuestion capture must classify as an active option list"
+  pass "fm_composer_option_list_active: real single-select AskUserQuestion tail is active"
+}
+
+test_askuserquestion_multiselect_is_active() {
+  printf '%s\n' \
+    '────────────────────────────────────────────────────────────' \
+    '←  ☐ X / Y / Z  ✔ Submit  →' \
+    '' \
+    'Which of these would you like to include?' \
+    '' \
+    '❯ 1. [ ] X' \
+    '  Include X.' \
+    '  2. [ ] Y' \
+    '  Include Y.' \
+    '  3. [ ] Z' \
+    '  Include Z.' \
+    '  4. [ ] Type something' \
+    '     Submit' \
+    '────────────────────────────────────────────────────────────' \
+    '  5. Chat about this' \
+    '' \
+    'Enter to select · ↑/↓ to navigate · Esc to cancel' \
+    | option_list || fail "a real multiSelect AskUserQuestion capture must classify as an active option list"
+  pass "fm_composer_option_list_active: real multiSelect AskUserQuestion tail is active"
+}
+
+test_trust_dialog_is_active() {
+  printf '%s\n' \
+    ' Security guide' \
+    '' \
+    ' ❯ 1. Yes, I trust this folder' \
+    '   2. No, exit' \
+    '' \
+    ' Enter to confirm · Esc to cancel' \
+    | option_list || fail "the real directory-trust dialog capture must classify as an active option list"
+  pass "fm_composer_option_list_active: real trust-dialog tail is active"
+}
+
+test_idle_footer_is_not_active() {
+  printf '%s\n' \
+    '❯ ' \
+    '────────────────────────────────────────────────────────────' \
+    '  [Opus 5 (1M context)] │ askprobe' \
+    '  Context █░░░░░░░░░ 7% │ Usage █░░░░░░░░░ 6% (resets in 3h 53m)' \
+    '  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents' \
+    | option_list && fail "a real idle empty-composer footer must not classify as an active option list"
+  pass "fm_composer_option_list_active: real idle footer (no picker) is not active"
+}
+
+test_pending_text_is_not_active() {
+  printf '%s\n' \
+    '❯ hello world this is unsubmitted' \
+    '────────────────────────────────────────────────────────────' \
+    '  [Opus 5 (1M context)] │ askprobe' \
+    '  Context █░░░░░░░░░ 7% │ Usage █░░░░░░░░░ 6% (resets in 3h 53m)' \
+    '  ⏵⏵ bypass permissions on (shift+tab to cycle)' \
+    | option_list && fail "real unsubmitted composer text must not classify as an active option list"
+  pass "fm_composer_option_list_active: real pending composer text (no picker) is not active"
+}
+
+test_hint_line_alone_is_not_active() {
+  # The two signals must be driven apart: the hint line matches, but there is
+  # no highlighted numbered row anywhere in the tail (assistant prose merely
+  # mentions cancelling). This must not misfire on the phrase alone.
+  printf '%s\n' \
+    'Some assistant text that happens to say Enter to select an item next,' \
+    'and separately mentions Esc to cancel a future operation.' \
+    | option_list && fail "the hint phrase alone, with no highlighted numbered row, must not classify as active"
+  pass "fm_composer_option_list_active: the footer-hint signal alone (no highlighted row) is not active"
+}
+
+test_numbered_row_alone_is_not_active() {
+  # The two signals must be driven apart the other way: a highlighted-looking
+  # numbered row with no hint-bar text at all (ordinary assistant output that
+  # happens to render a numbered list) must not misfire either.
+  printf '%s\n' \
+    '❯ 1. Do the first thing' \
+    '  2. Do the second thing' \
+    | option_list && fail "a numbered row alone, with no footer hint line, must not classify as active"
+  pass "fm_composer_option_list_active: a numbered-row shape alone (no footer hint) is not active"
+}
+
 test_bare_shell_glyphs_are_unknown
 test_stripped_unbordered_content_uses_plain_content
 test_bare_shell_prompt_with_command_is_not_empty
@@ -142,3 +248,10 @@ test_empty_content_is_empty
 test_idle_placeholder_is_empty
 test_idle_placeholder_case_mode_is_explicit
 test_real_text_is_pending
+test_askuserquestion_single_select_is_active
+test_askuserquestion_multiselect_is_active
+test_trust_dialog_is_active
+test_idle_footer_is_not_active
+test_pending_text_is_not_active
+test_hint_line_alone_is_not_active
+test_numbered_row_alone_is_not_active

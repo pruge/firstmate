@@ -667,9 +667,18 @@ run_send_case() {  # <bin-root> <fakebin> <log> <home> -- <send args...>
 }
 
 strip_send_preflight() {  # <log>
-  local preflight
+  local preflight capture_check
   preflight=$'tmux\x1fdisplay-message\x1f-p\x1f-t\x1fsess:win\x1f#{pane_id}'
-  awk -v preflight="$preflight" '$0 != preflight { print }' "$1"
+  # The text-submit path's option-list guard (task
+  # send-into-option-list-picks-option, bin/fm-tmux-lib.sh
+  # fm_tmux_option_list_active) reads a plain pane tail before typing
+  # anything; a --key send never reaches it. Asserted present separately in
+  # the plain-text case below, then stripped here like the display-message
+  # preflight so the rest of the command shape stays comparable to the
+  # pre-guard baseline.
+  capture_check=$'tmux\x1fcapture-pane\x1f-p\x1f-t\x1fsess:win\x1f-S\x1f-40'
+  awk -v preflight="$preflight" -v capture_check="$capture_check" \
+    '$0 != preflight && $0 != capture_check { print }' "$1"
 }
 
 test_send_conformance_old_vs_new() {
@@ -700,6 +709,8 @@ test_send_conformance_old_vs_new() {
   run_send_case "$ROOT" "$fb" "$log_new" "$home" -- "sess:win" hello captain
   rc_new=$?
   expect_code "$rc_old" "$rc_new" "fm-send plain text: old vs new exit code"
+  assert_contains "$(cat "$log_new")" $'\x1f''capture-pane'$'\x1f''-p'$'\x1f''-t'$'\x1f''sess:win'$'\x1f''-S'$'\x1f''-40' \
+    "fm-send did not check for an on-screen option list before typing"
   strip_send_preflight "$log_old" > "$filtered_old"
   strip_send_preflight "$log_new" > "$filtered_new"
   diff -u "$filtered_old" "$filtered_new" > "$TMP_ROOT/send-diff-plain.txt" 2>&1 \

@@ -189,6 +189,43 @@ fm_composer_idle_matches() {
   esac
 }
 
+# fm_composer_option_list_active: TRUE (rc 0) when a captured PLAIN-TEXT pane
+# tail (ANSI already stripped or never present, e.g. tmux's own `-p` capture)
+# shows a harness-drawn interactive selection list or confirm dialog that is
+# currently capturing Enter to pick its highlighted row, not to submit
+# composer text. Reads the tail on stdin.
+#
+# WHY THIS EXISTS (task send-into-option-list-picks-option): a send path that
+# only verifies the composer went empty after Enter cannot tell "my text was
+# submitted" apart from "a picker was showing, Enter picked its highlighted
+# option, and the picker closed" - both end with an empty composer. A caller
+# must refuse BEFORE typing anything once a picker is proven on screen, which
+# is what this classifier exists to prove.
+#
+# Verified against a live, freshly-launched Claude Code 2.1.220 (tmux,
+# `docs/verification/runtime-backends.md`): the directory-trust dialog and
+# every AskUserQuestion variant (single-select, multiSelect) replace the
+# normal idle composer's footer (model/window/permissions info) with a hint
+# line naming what Enter does plus an explicit cancel affordance - literally
+# "Enter to confirm · Esc to cancel" for the trust dialog, "Enter to select ·
+# ↑/↓ to navigate · Esc to cancel" for AskUserQuestion - and draw the
+# CURRENTLY HIGHLIGHTED row with the same "❯" glyph an empty composer itself
+# uses, immediately followed by a "<N>. " list marker (e.g. "❯ 1. Option A").
+# Per firstmate-coding-guidelines "Harness-dependent checks", no single
+# rendered string is load-bearing here: BOTH signals below must be present in
+# the tail, drawn from two different regions of the harness's own TUI (the
+# footer hint bar and the list body), so the classifier does not fire on
+# ordinary assistant prose that merely contains a numbered list (no hint
+# line) or a footer that happens to mention "cancel" with no highlighted
+# numbered row.
+fm_composer_option_list_active() {
+  local text
+  text=$(cat)
+  printf '%s\n' "$text" | grep -qE 'Enter to (select|confirm|choose).*Esc to cancel' || return 1
+  printf '%s\n' "$text" | grep -qE '❯[[:space:]]+[0-9]+\.' || return 1
+  return 0
+}
+
 fm_composer_classify_content() {  # <bordered> <content> [idle_re] [idle_case] [plain_content]
   local bordered=$1 content=$2 idle_re=${3:-} idle_case=${4:-sensitive} plain_content
   plain_content=${5:-$content}

@@ -500,6 +500,18 @@ else
       echo "error: text not sent to $T ($TARGET_BACKEND send failed; tried $RESOLUTION_TRIED)" >&2
       exit 1
       ;;
+    option-list-active)
+      # A picker (e.g. an AskUserQuestion-style prompt, a trust dialog) is
+      # proven on screen at $T right now: Enter there picks its highlighted
+      # row, it does not submit composer text. Refuse before typing anything,
+      # rather than letting the message get silently eaten by a selection
+      # (task send-into-option-list-picks-option).
+      if [ "$PENDING_REPLY_CREATED" = 1 ] && [ -n "$PENDING_REPLY_CORR" ]; then
+        fm_pending_reply_discard_undelivered "$STATE" "$PENDING_REPLY_CORR" || true
+      fi
+      echo "error: text NOT sent to $T - a selection list or confirm dialog is currently on screen there and is capturing Enter to pick its highlighted option, not to submit typed text. Nothing was typed; the message was not sent. Resolve or dismiss the on-screen prompt first, then resend if the message still needs to reach $T (tried $RESOLUTION_TRIED)." >&2
+      exit 1
+      ;;
     *)
       if [ "$PENDING_REPLY_CREATED" = 1 ] && [ -n "$PENDING_REPLY_CORR" ]; then
         fm_pending_reply_discard_undelivered "$STATE" "$PENDING_REPLY_CORR" || true

@@ -379,6 +379,20 @@ fm_pane_is_busy() {  # <target> [harness]
     | fm_busy_lines_match "$harness"
 }
 
+# fm_tmux_option_list_active: 0 when <target>'s recent plain-text tail proves
+# a harness-drawn selection list/confirm dialog is on screen right now (see
+# fm_composer_option_list_active, bin/fm-composer-lib.sh, for the two-signal
+# contract this owns). Same 40-line tail window as fm_pane_is_busy so a
+# picker's footer and highlighted row are always in view. A capture failure
+# reads "not active" here (fail-open on this specific heuristic): the target
+# is then unreachable for the send that follows too, which surfaces its own
+# error rather than a silent skip.
+fm_tmux_option_list_active() {  # <target>
+  local target=$1 tail40
+  tail40=$(tmux capture-pane -p -t "$target" -S -40 2>/dev/null) || return 1
+  printf '%s\n' "$tail40" | fm_composer_option_list_active
+}
+
 # fm_tmux_submit_core: type <text> into <target> ONCE, then submit with Enter,
 # verifying the composer cleared. Retries Enter ONLY — never retypes, because a
 # swallowed Enter leaves our text in the composer and retyping would duplicate
@@ -421,8 +435,17 @@ fm_tmux_submit_enter_core() {  # <target> <retries> <enter-sleep>
   fi
 }
 
+# Checks fm_tmux_option_list_active BEFORE typing anything: a picker on
+# screen would otherwise read our typed text as unrelated keystrokes and read
+# our submit Enter as "pick the highlighted row", closing the picker with an
+# empty composer that the caller could mistake for a confirmed submit (task
+# send-into-option-list-picks-option). Nothing is typed on this path.
 fm_tmux_submit_core() {  # <target> <text> <retries> <enter-sleep> <settle>
   local target=$1 text=$2 retries=$3 sleep_s=$4 settle=$5
+  if fm_tmux_option_list_active "$target"; then
+    printf 'option-list-active'
+    return 0
+  fi
   tmux send-keys -t "$target" -l "$text" 2>/dev/null || { printf 'send-failed'; return 0; }
   sleep "$settle"
   fm_tmux_submit_enter_core "$target" "$retries" "$sleep_s"
