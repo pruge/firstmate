@@ -746,17 +746,44 @@ test_codegraph_section_overrides_global_skip_rule_and_scopes_index() {
   assert_present "$brief" "ship brief was not scaffolded"
   assert_grep "overrides" "$brief" \
     "CodeGraph section must state it overrides the general no-index-skip-it rule"
-  assert_grep "is this brief deciding it" "$brief" \
-    "CodeGraph section must say the deferred user's-decision about indexing IS this brief"
-  assert_grep "single-digit seconds even on a large repo, not minutes" "$brief" \
-    "CodeGraph section must correct the wrong assumption that init is slow"
+  assert_grep "already matched this worktree's CodeGraph index to its checked-out code before your first turn" "$brief" \
+    "CodeGraph section must tell the crew the index is already present and current, not something to build"
   assert_grep "subtree" "$brief" \
     "CodeGraph section must tell the crew to scope the index to the subtree it is working on"
-  assert_grep "use that same path for every later \`codegraph\` command in this task - \`status\`, \`explore\`, and \`sync\` alike" "$brief" \
-    "CodeGraph section must carry the chosen subtree path through status, explore, and sync, not just init"
+  assert_grep "use that directory's path for every \`codegraph\` command in this task - \`status\`, \`explore\`, and \`sync\` alike" "$brief" \
+    "CodeGraph section must carry the located index path through status, explore, and sync"
   assert_grep "if it reports no index there, the path is wrong - re-check it before concluding anything about CodeGraph" "$brief" \
     "CodeGraph section must separate a missing index (wrong path) from an unsupported language, not conflate them"
   pass "fm-brief: CodeGraph section overrides the global skip rule and scopes the index"
+}
+
+# The index need not sit at the worktree root: `codegraph` resolves a query
+# path upward but never downward, so a repo whose code lives in a subdirectory
+# keeps its index beside that code. A brief that told the crew to init at the
+# root would build a second index there and leave the one every query resolves
+# to stale - the same defect fm_spawn_codegraph_sync was fixed to remove, and
+# it would be reintroduced by our own scaffold if this wording regressed.
+test_codegraph_section_locates_the_index_and_forbids_a_second_one() {
+  local home id brief
+  home="$TMP_ROOT/codegraph-locate-home"
+  mkdir -p "$home/data"
+  id="brief-codegraph-locate"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "ship brief was not scaffolded"
+  assert_grep "resolves a query path upward to the nearest enclosing \`.codegraph/\` but never downward" "$brief" \
+    "CodeGraph section must explain WHY the index has to be located rather than assumed at the root"
+  assert_grep "type d -name .codegraph -print -prune" "$brief" \
+    "CodeGraph section must give the crew a concrete way to find where the index actually lives"
+  assert_grep "Do not run \`codegraph init\` beside an index that already exists" "$brief" \
+    "CodeGraph section must forbid creating a second index next to an existing one"
+  assert_grep "the copy you are not syncing answers with outdated symbols as if they were current" "$brief" \
+    "CodeGraph section must say WHY a second index is harmful, not just that it is banned"
+  assert_grep "Init only when the listing above finds none at all" "$brief" \
+    "CodeGraph section must confine init to the repo-has-no-index-anywhere case"
+  assert_no_grep "run \`codegraph init\` once in this worktree" "$brief" \
+    "CodeGraph section must no longer tell the crew to init the worktree unconditionally"
+  pass "fm-brief: CodeGraph section locates the existing index and forbids initing a second one"
 }
 
 test_no_mistakes_dod_splits_gate_wait_into_three_branches() {
@@ -851,8 +878,8 @@ test_codegraph_setup_block_present_in_scout_and_ship() {
     || fail "fm-brief.sh scout scaffold exited non-zero"
   brief="$BRIEF_HOME/data/brief-codegraph-scout/brief.md"
   assert_present "$brief" "scout brief was not scaffolded"
-  assert_grep "run \`codegraph init\` once in this worktree" "$brief" \
-    "scout brief must instruct the worker to build the CodeGraph index first"
+  assert_grep "Find where that index lives before you query" "$brief" \
+    "scout brief must instruct the worker to locate the existing CodeGraph index first"
   assert_grep "reach for \`codegraph explore" "$brief" \
     "scout brief must tell the worker to prefer CodeGraph over grep, find, or opening files"
 
@@ -860,8 +887,8 @@ test_codegraph_setup_block_present_in_scout_and_ship() {
     || fail "fm-brief.sh ship scaffold exited non-zero"
   brief="$BRIEF_HOME/data/brief-codegraph-ship/brief.md"
   assert_present "$brief" "ship brief was not scaffolded"
-  assert_grep "run \`codegraph init\` once in this worktree" "$brief" \
-    "ship brief must instruct the worker to build the CodeGraph index first"
+  assert_grep "Find where that index lives before you query" "$brief" \
+    "ship brief must instruct the worker to locate the existing CodeGraph index first"
   assert_grep "reach for \`codegraph explore" "$brief" \
     "ship brief must tell the worker to prefer CodeGraph over grep, find, or opening files"
 
@@ -891,6 +918,7 @@ test_scout_and_secondmate_scaffold
 test_codegraph_setup_block_present_in_scout_and_ship
 test_decision_key_position_pinned_in_ship_and_scout
 test_codegraph_section_overrides_global_skip_rule_and_scopes_index
+test_codegraph_section_locates_the_index_and_forbids_a_second_one
 test_no_mistakes_dod_splits_gate_wait_into_three_branches
 test_ship_dod_requires_browser_verification_with_precondition
 test_status_protocol_covers_captain_check_and_captain_direct_work

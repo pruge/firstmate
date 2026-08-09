@@ -10,6 +10,14 @@
 # current, so the index must be matched to the code before the worker's first
 # turn.
 #
+# An index does not have to sit at the worktree root: `codegraph` resolves a
+# query path upward but never downward, so a repository whose code lives in a
+# subdirectory keeps its index beside that code and queries it with a matching
+# path. Matching the root there would build a SECOND index while the one the
+# project actually queries stayed stale, so the existing index must be found
+# and synced wherever it already lives, and a repository holding indexes in
+# more than one place must get all of them synced rather than one picked.
+#
 # A missing codegraph binary is a deliberate spawn gate (captain override,
 # 2026-08-09): firstmate must refuse the spawn and say so, with an actionable
 # install command, rather than warn and continue. That is the one exception -
@@ -30,6 +38,11 @@ INSTALL_CMD="npm install -g @colbymchenry/codegraph"
 # make_fake_codegraph <dir> <behavior> writes a fake `codegraph` binary that
 # logs every invocation to $CODEGRAPH_LOG and then behaves per <behavior>:
 # ok (exit 0), fail (exit 3), hang (sleeps past any bounded timeout).
+#
+# A successful `init <path>` also creates <path>/.codegraph, matching the real
+# binary. That is what lets a test count the indexes left ON DISK rather than
+# only the calls made - the defect this file guards is a second index existing,
+# which a call log alone cannot show.
 make_fake_codegraph() {
   local fakebin behavior=$2
   fakebin=$(fm_fakebin "$1")
@@ -39,11 +52,24 @@ printf '%s %s\n' "\$1" "\$2" >> "\${CODEGRAPH_LOG:?CODEGRAPH_LOG unset}"
 case "$behavior" in
   fail) exit 3 ;;
   hang) sleep 5; exit 0 ;;
-  *) exit 0 ;;
+  *) [ "\$1" = init ] && mkdir -p "\$2/.codegraph"; exit 0 ;;
 esac
 SH
   chmod +x "$fakebin/codegraph"
   printf '%s\n' "$fakebin"
+}
+
+# count_indexes <dir>: how many .codegraph/ directories the tree holds. The
+# invariant under test is that a spawn never leaves more than the project
+# already had, so the count is the assertion that matters.
+count_indexes() {
+  find "$1" -type d -name .codegraph -print -prune 2>/dev/null | wc -l | tr -d ' '
+}
+
+expect_indexes() {  # <dir> <expected-count> <msg>
+  local actual
+  actual=$(count_indexes "$1")
+  [ "$actual" = "$2" ] || fail "$3 (expected $2 index/indexes under $1, found $actual)"$'\n'"$(find "$1" -type d -name .codegraph -print -prune 2>/dev/null)"
 }
 
 test_lib_inits_a_worktree_with_no_existing_index() {
@@ -79,6 +105,95 @@ test_lib_syncs_a_worktree_with_an_existing_index() {
   assert_grep "sync $wt" "$log" "a worktree with an existing .codegraph/ should be sync'd, not re-init'd"
   assert_no_grep "init $wt" "$log" "an already-indexed worktree should never be re-init'd"
   pass "a worktree with an existing index is sync'd, matching it to current code"
+}
+
+# The subdirectory regression, measured in `gootte` on 2026-08-09: the code
+# lives under code/web/, the project's own convention queries with a matching
+# path, and its index sits at code/web/.codegraph with none at the root.
+# Matching the worktree root there built a fresh SECOND index at the root
+# while the one every query resolves to stayed stale - a silently-stale
+# answer, which is the whole failure this function exists to prevent.
+test_lib_syncs_an_existing_index_below_the_worktree_root() {
+  local case_dir wt fakebin log out status
+  case_dir="$TMP_ROOT/lib-subdir"
+  wt="$case_dir/wt"
+  mkdir -p "$wt/code/web/.codegraph" "$wt/code/web/src"
+  fakebin=$(make_fake_codegraph "$case_dir/fake" ok)
+  log="$case_dir/codegraph.log"
+
+  out=$(CODEGRAPH_LOG="$log" PATH="$fakebin:$PATH" bash -c \
+    ". '$LIB'; fm_spawn_codegraph_sync '$wt'" 2>&1)
+  status=$?
+  expect_code 0 "$status" "lib call should succeed when the index lives below the root"
+  assert_grep "sync $wt/code/web" "$log" "the existing index below the root should be synced where it already lives"
+  assert_no_grep "init $wt" "$log" "the worktree root must not be indexed alongside an index that already exists below it"
+  assert_absent "$wt/.codegraph" "a second index must not appear at the worktree root"
+  expect_indexes "$wt" 1 "a repo whose index lives below the root must still hold exactly one index"
+  pass "an existing index below the worktree root is synced where it lives, and gains no root index"
+}
+
+# The other half of the same rule: a repo that has never been indexed has
+# expressed no preference about where its index belongs, so the root is the
+# only defensible default - and it must produce exactly one index, not more.
+test_lib_creates_exactly_one_index_when_none_exists_anywhere() {
+  local case_dir wt fakebin log out status
+  case_dir="$TMP_ROOT/lib-none-anywhere"
+  wt="$case_dir/wt"
+  mkdir -p "$wt/code/web/src" "$wt/services/api"
+  fakebin=$(make_fake_codegraph "$case_dir/fake" ok)
+  log="$case_dir/codegraph.log"
+
+  out=$(CODEGRAPH_LOG="$log" PATH="$fakebin:$PATH" bash -c \
+    ". '$LIB'; fm_spawn_codegraph_sync '$wt'" 2>&1)
+  status=$?
+  expect_code 0 "$status" "lib call should succeed for a repo with no index anywhere"
+  assert_grep "init $wt" "$log" "a repo with no index anywhere should be init'd at its root"
+  assert_no_grep "sync " "$log" "there is nothing to sync when no index exists anywhere"
+  expect_indexes "$wt" 1 "a repo with no index anywhere must end up with exactly one"
+  pass "a repo with no index anywhere ends up with exactly one, at the root"
+}
+
+# The case that decides whether the rule is safe: when a repo already holds
+# indexes in more than one place, EVERY one is synced. Picking one would leave
+# the others stale and still reachable by a query path that resolves to them.
+test_lib_syncs_every_index_when_a_repo_holds_more_than_one() {
+  local case_dir wt fakebin log out status
+  case_dir="$TMP_ROOT/lib-multi"
+  wt="$case_dir/wt"
+  mkdir -p "$wt/.codegraph" "$wt/code/web/.codegraph"
+  fakebin=$(make_fake_codegraph "$case_dir/fake" ok)
+  log="$case_dir/codegraph.log"
+
+  out=$(CODEGRAPH_LOG="$log" PATH="$fakebin:$PATH" bash -c \
+    ". '$LIB'; fm_spawn_codegraph_sync '$wt'" 2>&1)
+  status=$?
+  expect_code 0 "$status" "lib call should succeed for a repo holding several indexes"
+  assert_grep "sync $wt" "$log" "the root index should be synced"
+  assert_grep "sync $wt/code/web" "$log" "the index below the root should be synced too, not left stale and reachable"
+  assert_no_grep "init " "$log" "nothing should be init'd when indexes already exist"
+  expect_indexes "$wt" 2 "syncing several indexes must not add or remove any"
+  pass "a repo holding indexes in more than one place gets all of them synced, and gains none"
+}
+
+# Discovery must not be fooled by an index that is not the project's own:
+# .git and node_modules never hold an index a worker queries, and treating a
+# vendored one as the project's would leave the real index unsynced.
+test_lib_ignores_indexes_inside_git_and_node_modules() {
+  local case_dir wt fakebin log out status
+  case_dir="$TMP_ROOT/lib-vendored"
+  wt="$case_dir/wt"
+  mkdir -p "$wt/.git/x/.codegraph" "$wt/node_modules/pkg/.codegraph" "$wt/code/web/.codegraph"
+  fakebin=$(make_fake_codegraph "$case_dir/fake" ok)
+  log="$case_dir/codegraph.log"
+
+  out=$(CODEGRAPH_LOG="$log" PATH="$fakebin:$PATH" bash -c \
+    ". '$LIB'; fm_spawn_codegraph_sync '$wt'" 2>&1)
+  status=$?
+  expect_code 0 "$status" "lib call should succeed while ignoring vendored indexes"
+  assert_grep "sync $wt/code/web" "$log" "the project's own index should still be synced"
+  assert_no_grep "$wt/node_modules" "$log" "an index inside node_modules is not the project's own"
+  assert_no_grep "$wt/.git" "$log" "an index inside .git is not the project's own"
+  pass "indexes inside .git and node_modules are ignored, and the project's own is still synced"
 }
 
 # The load-bearing regression: an absent codegraph binary must refuse rather
@@ -231,6 +346,26 @@ test_spawn_syncs_an_already_indexed_task_worktree() {
   pass "spawning into an already-indexed task worktree syncs it to current code"
 }
 
+# The subdirectory regression at the fm-spawn.sh integration level: a real
+# spawn into a worktree whose index lives below the root must sync that index
+# and leave no second one at the root.
+test_spawn_syncs_an_index_below_the_task_worktree_root() {
+  local rec id out status
+  id=cgspawn-subdir-z5
+  rec=$(make_spawn_case spawn-subdir "$id")
+  read_spawn_record "$rec"
+  mkdir -p "$WT_DIR/code/web/.codegraph"
+
+  out=$(run_case_spawn "$id")
+  status=$?
+  expect_code 0 "$status" "spawn should succeed"
+  assert_contains "$out" "spawned $id" "spawn did not report success"
+  assert_grep "sync $WT_DIR/code/web" "$CGLOG" "spawn should have synced the index that lives below the worktree root"
+  assert_no_grep "init $WT_DIR" "$CGLOG" "spawn must not index the root alongside an index that already exists below it"
+  assert_absent "$WT_DIR/.codegraph" "spawn must not leave a second index at the worktree root"
+  pass "spawning into a worktree whose index lives below the root syncs that index and adds no root index"
+}
+
 # The other load-bearing regression, at the fm-spawn.sh integration level: an
 # entirely absent codegraph tool must refuse the spawn, not silently let it
 # through. Reproduces by omitting the fake codegraph from PATH and stripping
@@ -270,11 +405,16 @@ test_spawn_succeeds_with_a_visible_warning_when_codegraph_fails() {
 
 test_lib_inits_a_worktree_with_no_existing_index
 test_lib_syncs_a_worktree_with_an_existing_index
+test_lib_syncs_an_existing_index_below_the_worktree_root
+test_lib_creates_exactly_one_index_when_none_exists_anywhere
+test_lib_syncs_every_index_when_a_repo_holds_more_than_one
+test_lib_ignores_indexes_inside_git_and_node_modules
 test_lib_refuses_when_codegraph_binary_is_absent
 test_lib_warns_but_succeeds_when_codegraph_fails
 test_lib_bounds_a_hanging_codegraph_and_still_succeeds
 test_spawn_inits_a_fresh_task_worktree
 test_spawn_syncs_an_already_indexed_task_worktree
+test_spawn_syncs_an_index_below_the_task_worktree_root
 test_spawn_refuses_without_codegraph_installed
 test_spawn_succeeds_with_a_visible_warning_when_codegraph_fails
 
