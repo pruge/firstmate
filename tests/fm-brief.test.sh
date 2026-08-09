@@ -752,8 +752,10 @@ test_codegraph_section_overrides_global_skip_rule_and_scopes_index() {
     "CodeGraph section must tell the crew to scope the index to the subtree it is working on"
   assert_grep "use that directory's path for every \`codegraph\` command in this task - \`status\`, \`explore\`, and \`sync\` alike" "$brief" \
     "CodeGraph section must carry the located index path through status, explore, and sync"
-  assert_grep "if it reports no index there, the path is wrong - re-check it before concluding anything about CodeGraph" "$brief" \
-    "CodeGraph section must separate a missing index (wrong path) from an unsupported language, not conflate them"
+  assert_grep "if it reports no index there, the path is wrong - re-check it" "$brief" \
+    "CodeGraph section must separate a missing index at a listed path (wrong path) from no index anywhere (not worth indexing), not conflate them"
+  assert_grep "If the listing itself found no index anywhere in the worktree, that is not a wrong path" "$brief" \
+    "CodeGraph section must tell the crew that no index anywhere means CodeGraph judged the repo not worth indexing, not a broken path"
   pass "fm-brief: CodeGraph section overrides the global skip rule and scopes the index"
 }
 
@@ -901,7 +903,7 @@ test_codegraph_setup_block_present_in_scout_and_ship() {
     || fail "fm-brief.sh scout scaffold exited non-zero"
   brief="$BRIEF_HOME/data/brief-codegraph-scout/brief.md"
   assert_present "$brief" "scout brief was not scaffolded"
-  assert_grep "Find where that index lives before you query" "$brief" \
+  assert_grep "Find where any index lives before you query" "$brief" \
     "scout brief must instruct the worker to locate the existing CodeGraph index first"
   assert_grep "reach for \`codegraph explore" "$brief" \
     "scout brief must tell the worker to prefer CodeGraph over grep, find, or opening files"
@@ -910,7 +912,7 @@ test_codegraph_setup_block_present_in_scout_and_ship() {
     || fail "fm-brief.sh ship scaffold exited non-zero"
   brief="$BRIEF_HOME/data/brief-codegraph-ship/brief.md"
   assert_present "$brief" "ship brief was not scaffolded"
-  assert_grep "Find where that index lives before you query" "$brief" \
+  assert_grep "Find where any index lives before you query" "$brief" \
     "ship brief must instruct the worker to locate the existing CodeGraph index first"
   assert_grep "reach for \`codegraph explore" "$brief" \
     "ship brief must tell the worker to prefer CodeGraph over grep, find, or opening files"

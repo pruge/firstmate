@@ -72,6 +72,44 @@ expect_indexes() {  # <dir> <expected-count> <msg>
   [ "$actual" = "$2" ] || fail "$3 (expected $2 index/indexes under $1, found $actual)"$'\n'"$(find "$1" -type d -name .codegraph -print -prune 2>/dev/null)"
 }
 
+# make_prune_fake_codegraph <dir> <node-count> <file-count> writes a fake
+# `codegraph` binary for exercising fm_codegraph_prune_if_unindexable: `init`
+# and `sync` behave like the "ok" fake above (log the call, `init` also
+# creates <path>/.codegraph), `status -j <path>` logs the call and answers
+# with the given nodeCount/fileCount, and `uninit -f <path>` logs the call
+# and actually removes <path>/.codegraph - so a test can assert on both what
+# was called and what is left on disk afterward.
+make_prune_fake_codegraph() {
+  local fakebin nodes=$2 files=$3
+  fakebin=$(fm_fakebin "$1")
+  cat > "$fakebin/codegraph" <<SH
+#!/usr/bin/env bash
+log="\${CODEGRAPH_LOG:?CODEGRAPH_LOG unset}"
+case "\$1" in
+  init) printf 'init %s\n' "\$2" >> "\$log"; mkdir -p "\$2/.codegraph"; exit 0 ;;
+  sync) printf 'sync %s\n' "\$2" >> "\$log"; exit 0 ;;
+  status) printf 'status %s\n' "\$3" >> "\$log"; printf '{"nodeCount":%s,"fileCount":%s}' "$nodes" "$files"; exit 0 ;;
+  uninit) printf 'uninit %s\n' "\$3" >> "\$log"; rm -rf "\$3/.codegraph"; exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$fakebin/codegraph"
+  printf '%s\n' "$fakebin"
+}
+
+# add_tracked_files <dir> <count>: commit <count> more tracked files into the
+# git repo/worktree at <dir>, so `git -C <dir> ls-files` reflects a chosen
+# total - the coverage judgment reads that count, not codegraph's own.
+add_tracked_files() {
+  local dir=$1 count=$2 i
+  for i in $(seq 1 "$count"); do
+    printf 'x' > "$dir/prune-fixture-$i.txt"
+  done
+  git -C "$dir" add -A
+  git -C "$dir" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' \
+    commit -qm "add $count tracked files"
+}
+
 test_lib_inits_a_worktree_with_no_existing_index() {
   local case_dir wt fakebin log out status
   case_dir="$TMP_ROOT/lib-init"
@@ -255,6 +293,115 @@ test_lib_bounds_a_hanging_codegraph_and_still_succeeds() {
   pass "a hanging codegraph call (binary present) is bounded by the timeout and still lets the caller continue"
 }
 
+# --- fm_codegraph_prune_if_unindexable: skip/keep by measured result -------
+#
+# Captain override, 2026-08-09: an index judged worthless from codegraph's
+# own measured node/file counts against the subtree's tracked file count is
+# removed rather than kept, never judged by a repository or directory name.
+# These pin both directions - a repo actually worth indexing must still keep
+# its index - plus the small-subtree floor where the ratio is noise either way.
+
+test_prune_removes_an_index_with_zero_nodes() {
+  local case_dir dir fakebin log status
+  case_dir="$TMP_ROOT/prune-zero-nodes"
+  dir="$case_dir/wt"
+  fm_git_init_commit "$dir"
+  mkdir -p "$dir/.codegraph"
+  fakebin=$(make_prune_fake_codegraph "$case_dir/fake" 0 0)
+  log="$case_dir/codegraph.log"
+
+  CODEGRAPH_LOG="$log" PATH="$fakebin:$PATH" bash -c \
+    ". '$LIB'; fm_codegraph_prune_if_unindexable '$dir' none 0"
+  status=$?
+  expect_code 0 "$status" "prune should never fail the caller"
+  assert_grep "uninit $dir" "$log" "an index with zero nodes should be uninit'd"
+  assert_absent "$dir/.codegraph" "an index covering no supported-language content must not survive"
+  pass "an index covering no supported-language content is removed"
+}
+
+test_prune_removes_an_index_with_low_file_coverage() {
+  local case_dir dir fakebin log status
+  case_dir="$TMP_ROOT/prune-low-coverage"
+  dir="$case_dir/wt"
+  fm_git_init_commit "$dir"
+  add_tracked_files "$dir" 40
+  mkdir -p "$dir/.codegraph"
+  # 41 tracked files total (README + 40); reporting 2 indexed files is ~5%,
+  # under the 10% default floor.
+  fakebin=$(make_prune_fake_codegraph "$case_dir/fake" 50 2)
+  log="$case_dir/codegraph.log"
+
+  CODEGRAPH_LOG="$log" PATH="$fakebin:$PATH" bash -c \
+    ". '$LIB'; fm_codegraph_prune_if_unindexable '$dir' none 0"
+  status=$?
+  expect_code 0 "$status" "prune should never fail the caller"
+  assert_grep "uninit $dir" "$log" "an index covering only a sliver of the tracked files should be uninit'd"
+  assert_absent "$dir/.codegraph" "an index with low file coverage must not survive"
+  pass "an index covering only a sliver of the tracked files is removed"
+}
+
+test_prune_keeps_an_index_with_healthy_file_coverage() {
+  local case_dir dir fakebin log status
+  case_dir="$TMP_ROOT/prune-good-coverage"
+  dir="$case_dir/wt"
+  fm_git_init_commit "$dir"
+  add_tracked_files "$dir" 24
+  mkdir -p "$dir/.codegraph"
+  # 25 tracked files total (README + 24); reporting 23 indexed files is 92%,
+  # well above the 10% default floor.
+  fakebin=$(make_prune_fake_codegraph "$case_dir/fake" 100 23)
+  log="$case_dir/codegraph.log"
+
+  CODEGRAPH_LOG="$log" PATH="$fakebin:$PATH" bash -c \
+    ". '$LIB'; fm_codegraph_prune_if_unindexable '$dir' none 0"
+  status=$?
+  expect_code 0 "$status" "prune should never fail the caller"
+  assert_no_grep "uninit" "$log" "an index covering most of the tracked files must not be removed"
+  assert_present "$dir/.codegraph" "an index with healthy file coverage must survive"
+  pass "an index covering most of a repository's tracked files is kept"
+}
+
+test_prune_leaves_a_small_subtree_unjudged() {
+  local case_dir dir fakebin log status
+  case_dir="$TMP_ROOT/prune-small-subtree"
+  dir="$case_dir/wt"
+  # Only the one README.md tracked file - far below FM_CODEGRAPH_MIN_JUDGED_FILES,
+  # so a low ratio here is noise, not a verdict.
+  fm_git_init_commit "$dir"
+  mkdir -p "$dir/.codegraph"
+  fakebin=$(make_prune_fake_codegraph "$case_dir/fake" 5 0)
+  log="$case_dir/codegraph.log"
+
+  CODEGRAPH_LOG="$log" PATH="$fakebin:$PATH" bash -c \
+    ". '$LIB'; fm_codegraph_prune_if_unindexable '$dir' none 0"
+  status=$?
+  expect_code 0 "$status" "prune should never fail the caller"
+  assert_no_grep "uninit" "$log" "a subtree too small to judge must not be pruned on ratio alone"
+  assert_present "$dir/.codegraph" "a subtree below the judged-files floor must keep its index"
+  pass "a subtree too small to judge keeps its index rather than being judged on noise"
+}
+
+test_lib_prunes_a_freshly_built_low_coverage_index_end_to_end() {
+  local case_dir wt fakebin log out status
+  case_dir="$TMP_ROOT/lib-prune-fresh"
+  wt="$case_dir/wt"
+  fm_git_init_commit "$wt"
+  add_tracked_files "$wt" 40
+  fakebin=$(make_prune_fake_codegraph "$case_dir/fake" 50 2)
+  log="$case_dir/codegraph.log"
+
+  out=$(CODEGRAPH_LOG="$log" PATH="$fakebin:$PATH" bash -c \
+    ". '$LIB'; fm_spawn_codegraph_sync '$wt'" 2>&1)
+  status=$?
+  expect_code 0 "$status" "spawn sync should succeed even when the freshly built index gets pruned"
+  assert_grep "init $wt" "$log" "a worktree with no existing index should still be init'd first"
+  assert_grep "uninit $wt" "$log" "the freshly built low-coverage index should be uninit'd right after"
+  assert_absent "$wt/.codegraph" "a freshly built low-coverage index must not survive the spawn sync"
+  assert_contains "$out" "notice: CodeGraph indexed only 2 of 41 tracked files" \
+    "the removal should explain itself with the measured counts"
+  pass "a freshly built index covering only a sliver of the repository is removed in the same pass that built it"
+}
+
 # --- fm-spawn.sh integration (real spawn, fake tmux/treehouse backend) -----
 
 make_spawn_fakebin() {
@@ -403,6 +550,26 @@ test_spawn_succeeds_with_a_visible_warning_when_codegraph_fails() {
   pass "spawn succeeds with a visible warning when codegraph is present but its call fails"
 }
 
+# The prune rule at the real fm-spawn.sh integration level: a fresh task
+# worktree whose freshly built index covers no supported-language content at
+# all must come out of a real spawn with no .codegraph/ left behind.
+test_spawn_prunes_a_freshly_built_index_that_covers_nothing() {
+  local rec id out status
+  id=cgspawn-prune-z6
+  rec=$(make_spawn_case spawn-prune "$id")
+  read_spawn_record "$rec"
+  make_prune_fake_codegraph "$(dirname "$FAKEBIN_DIR")" 0 0 >/dev/null
+
+  out=$(run_case_spawn "$id")
+  status=$?
+  expect_code 0 "$status" "spawn should succeed even when the freshly built index gets pruned"
+  assert_contains "$out" "spawned $id" "spawn did not report success"
+  assert_grep "init $WT_DIR" "$CGLOG" "spawn should still have built the index before judging it"
+  assert_grep "uninit $WT_DIR" "$CGLOG" "spawn should have removed the index once it measured no supported content"
+  assert_absent "$WT_DIR/.codegraph" "a freshly built index covering nothing must not survive the spawn"
+  pass "spawning into a repository with no supported-language content leaves no CodeGraph index behind"
+}
+
 test_lib_inits_a_worktree_with_no_existing_index
 test_lib_syncs_a_worktree_with_an_existing_index
 test_lib_syncs_an_existing_index_below_the_worktree_root
@@ -412,10 +579,16 @@ test_lib_ignores_indexes_inside_git_and_node_modules
 test_lib_refuses_when_codegraph_binary_is_absent
 test_lib_warns_but_succeeds_when_codegraph_fails
 test_lib_bounds_a_hanging_codegraph_and_still_succeeds
+test_prune_removes_an_index_with_zero_nodes
+test_prune_removes_an_index_with_low_file_coverage
+test_prune_keeps_an_index_with_healthy_file_coverage
+test_prune_leaves_a_small_subtree_unjudged
+test_lib_prunes_a_freshly_built_low_coverage_index_end_to_end
 test_spawn_inits_a_fresh_task_worktree
 test_spawn_syncs_an_already_indexed_task_worktree
 test_spawn_syncs_an_index_below_the_task_worktree_root
 test_spawn_refuses_without_codegraph_installed
 test_spawn_succeeds_with_a_visible_warning_when_codegraph_fails
+test_spawn_prunes_a_freshly_built_index_that_covers_nothing
 
 echo "# all fm-spawn-codegraph-sync tests passed"
