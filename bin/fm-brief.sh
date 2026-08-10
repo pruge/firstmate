@@ -369,6 +369,19 @@ Never commit the index: `.codegraph/` is machine-local and large. If this repo d
 EOF
 CODEGRAPH_SECTION=${CODEGRAPH_SECTION%$'\n'}
 
+# Worktree isolation has to cover processes, not just files: sibling worktrees and the
+# captain's own checkout run live servers on this same machine, and a name pattern cannot
+# tell them apart from yours. One crewmate freeing its port with `pkill -f 'wrangler dev'`
+# killed the captain's dev server that way. fm-kill-port.sh is the port-scoped replacement,
+# and it refuses a port whose listener is rooted outside the caller's tree, so a wrong port
+# number comes back as a refusal instead of a second incident.
+IFS= read -r -d '' PROCESS_ISOLATION_RULE <<EOF || true
+Isolation covers PROCESSES too, not just files: sibling worktrees and the captain's own checkout run live servers on this same machine, and a name pattern cannot tell theirs from yours.
+   So never kill by pattern (\`pkill -f\`, \`killall\`, or \`pgrep\` piped into kill) - free a port with \`$FM_ROOT/bin/fm-kill-port.sh <port> [<port> ...]\` instead, which accepts several ports and refuses any whose listener lives outside this worktree.
+   Beyond ports, terminate only a pid you started yourself and can name.
+EOF
+PROCESS_ISOLATION_RULE=${PROCESS_ISOLATION_RULE%$'\n'}
+
 if [ "$KIND" = scout ]; then
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
@@ -389,6 +402,7 @@ $CODEGRAPH_SECTION
 # Rules
 1. Never push to any remote and never open a PR.
 2. Stay inside this worktree; the only files you may write outside it are the report and the status file below.
+   $PROCESS_ISOLATION_RULE
 3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
 4. Report status by appending one line:
    \`echo "{state}: {one short line}" >> $STATUS_FILE\`
@@ -522,6 +536,7 @@ $CODEGRAPH_SECTION
 # Rules
 $RULE1
 2. Stay inside this worktree; modify nothing outside it.
+   $PROCESS_ISOLATION_RULE
 3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
    If this task fixes something a human would see on screen, check whether this worktree has local data, env files, and an assigned dev port before concluding it can't run the app - do not assume it cannot run without checking. When it can, reproduce the bug in a real browser with chrome-devtools-axi before your fix and confirm it is gone after, with evidence, rather than relying on tests alone. When it genuinely cannot, name which of the three (data, env files, dev port) was missing in your report instead of silently skipping the check.
 4. Report status by appending one line:
