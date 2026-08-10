@@ -32,7 +32,7 @@ Do not sweep another home's endpoints or infer ownership from a matching window 
 Before relaunch, prove that no live agent still owns the recorded task and that the existing worktree remains available.
 Preserve its uncommitted changes and commits, keep the same task identity, and resume or relaunch the recorded harness in that existing worktree with the same brief plus a concise progress note.
 Do not use a fresh generic spawn while the recorded worktree is unaccounted for, because allocating another worktree can split one task across two copies.
-On a tmux/herdr/zellij/cmux task, `bin/fm-spawn.sh` itself now enforces this for a same-id relaunch (see its `--help`); it is still yours to enforce for Orca's own worktree/terminal inventory.
+On a tmux/herdr/zellij/cmux task, `bin/fm-spawn.sh` refuses a same-id spawn outright while the recorded worktree still holds uncommitted work, so a relaunch cannot silently leave that work behind (see its `--help`); it never reuses that worktree for you, so resuming the task in it stays yours, as does the whole check for Orca's own worktree/terminal inventory.
 If the worktree or ownership cannot be reconciled safely, leave all state intact and report the task failed or blocked with the conflicting evidence.
 
 ## Live-endpoint escalation

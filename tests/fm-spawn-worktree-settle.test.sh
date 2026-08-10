@@ -150,13 +150,13 @@ test_already_settled_pane_costs_one_confirm_sleep() {
   pass "an already-settled pane confirms via the existing inter-poll sleep, not an extra full cycle"
 }
 
-# A clean, still-existing recorded worktree (state/<id>.meta's worktree=) is
-# reused in place: `treehouse get` must never be sent, and the pane must be
-# sent into that exact recorded path instead - the fix for the relaunch-split
-# incident (a dead worker's session gone but its worktree, with no commits,
-# still on disk; relaunching the same task id must land back in that same
-# worktree, not a fresh empty one).
-test_recorded_worktree_reused_when_clean() {
+# A clean, still-existing recorded worktree holds no unlanded work, so there is
+# nothing to lose by acquiring a fresh one: the spawn stays silent and runs an
+# ordinary `treehouse get`, exactly as it did before this guard existed. The
+# guard deliberately does NOT reuse the recorded worktree - it only refuses
+# when work would otherwise be left behind - so the pane must never be sent
+# into the recorded path instead.
+test_clean_recorded_worktree_gets_fresh_worktree() {
   local rec id out status
   id=settle-reuse-clean-z3
   rec=$(make_settle_case settle-reuse-clean "$id" 0)
@@ -165,19 +165,17 @@ test_recorded_worktree_reused_when_clean() {
 
   out=$(run_settle_spawn "$id")
   status=$?
-  expect_code 0 "$status" "spawn should succeed reusing a clean recorded worktree"
+  expect_code 0 "$status" "spawn should succeed past a clean recorded worktree"
   assert_contains "$out" "spawned $id" "spawn did not report success"
-  assert_grep "worktree=$WT_DIR" "$HOME_DIR/state/$id.meta" \
-    "meta did not record the reused worktree"
-  assert_no_grep "treehouse get" "$SENDLOG" \
-    "spawn ran 'treehouse get' instead of reusing the recorded worktree"
-  assert_grep "$WT_DIR" "$SENDLOG" \
-    "spawn never sent the pane into the recorded worktree"
-  pass "a clean recorded worktree is reused instead of allocating a fresh one"
+  assert_grep "treehouse get" "$SENDLOG" \
+    "a clean recorded worktree must still acquire a worktree via treehouse get"
+  assert_no_grep "^cd " "$SENDLOG" \
+    "spawn sent the pane into the recorded worktree instead of acquiring a fresh one"
+  pass "a clean recorded worktree does not block the spawn and gets a fresh worktree"
 }
 
 # A recorded worktree with uncommitted work must refuse the spawn outright -
-# silently falling back to a fresh worktree here is exactly the incident this
+# silently acquiring a fresh worktree here is exactly the incident this
 # task exists to close (the dead worker's 11 uncommitted files would have been
 # orphaned in a worktree nobody was pointed at anymore).
 test_recorded_worktree_dirty_refuses_new_worktree() {
@@ -199,7 +197,7 @@ test_recorded_worktree_dirty_refuses_new_worktree() {
     "spawn sent pane commands despite refusing over the dirty recorded worktree"
   meta_after=$(cat "$HOME_DIR/state/$id.meta")
   [ "$meta_before" = "$meta_after" ] || fail "refused spawn must not rewrite the task's meta"
-  pass "a dirty recorded worktree refuses the spawn instead of silently splitting the task"
+  pass "a dirty recorded worktree refuses the spawn instead of silently leaving the work behind"
 }
 
 # FM_SPAWN_ALLOW_NEW_WORKTREE=1 is the explicit escape hatch: with it set, a
@@ -223,7 +221,7 @@ test_recorded_worktree_dirty_allows_new_worktree_when_explicit() {
 }
 
 # A recorded worktree that no longer exists on disk (returned, pruned, or
-# manually removed) is not a reuse candidate: fall through to `treehouse get`
+# manually removed) holds nothing to lose: fall through to `treehouse get`
 # exactly as before, with no explicit override required.
 test_recorded_worktree_vanished_gets_fresh_worktree() {
   local rec id out status
@@ -263,7 +261,7 @@ test_no_recorded_worktree_gets_fresh_worktree() {
 
 test_single_stale_first_read_is_not_accepted
 test_already_settled_pane_costs_one_confirm_sleep
-test_recorded_worktree_reused_when_clean
+test_clean_recorded_worktree_gets_fresh_worktree
 test_recorded_worktree_dirty_refuses_new_worktree
 test_recorded_worktree_dirty_allows_new_worktree_when_explicit
 test_recorded_worktree_vanished_gets_fresh_worktree

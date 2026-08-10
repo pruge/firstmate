@@ -1180,16 +1180,7 @@ for RESTART_ID in fm-hibit-resume-r1 wheelhouse-healing-r1; do
       || fail "$RESTART_ID repeated reclaim changed workspace identity"
     [ "$NEW_RESTART_PANE" != "$PRIOR_RESTART_PANE" ] \
       || fail "$RESTART_ID repeated reclaim reused the prior husk pane"
-    # Only return PRIOR_RESTART_WT here when the repeated reclaim actually
-    # moved to a different worktree. fm-spawn.sh now reuses a task's own
-    # recorded worktree when it is still clean, so PRIOR_RESTART_WT and
-    # NEW_RESTART_WT are the SAME path whenever nothing dirtied it between
-    # rounds - forcing an early `treehouse return` on that path here would
-    # yank the pool worktree out from under the pane teardown_task is about
-    # to operate on next, before teardown's own return call gets to it.
-    if [ "$PRIOR_RESTART_WT" != "$NEW_RESTART_WT" ]; then
-      "$REAL_TREEHOUSE" return --force "$PRIOR_RESTART_WT" >/dev/null 2>&1 || true
-    fi
+    "$REAL_TREEHOUSE" return --force "$PRIOR_RESTART_WT" >/dev/null 2>&1 || true
   fi
 
   teardown_task "$RESTART_ID" "$HOME_DIR" > "$TMP_ROOT/$RESTART_ID-teardown.out" 2> "$TMP_ROOT/$RESTART_ID-teardown.err" \
