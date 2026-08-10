@@ -2318,7 +2318,8 @@ if [ "$HERDR_PRESENTATION_RETIRE_CANDIDATE" = 1 ]; then
     # signal at all. The close stays non-fatal exactly as before: the presence
     # gate below is what decides whether any durable record may be removed.
     fm_backend_herdr_projection_close_pane_focus_preserving \
-      "$HERDR_PRESENTATION_SESSION" "$HERDR_PRESENTATION_PANE" || true
+      "$HERDR_PRESENTATION_SESSION" "$HERDR_PRESENTATION_PANE"
+    echo "DEBUGTEARDOWN id=$ID close_status=$?" >&2
   else
     echo "warning: herdr presentation focus lock unavailable; refusing a concurrent focus-unsafe pane close" >&2
   fi
@@ -2331,8 +2332,11 @@ elif [ "$BACKEND" = herdr ]; then
 elif [ "$BACKEND" != orca ]; then
   fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID" 2>/dev/null || true
 fi
+echo "DEBUGTEARDOWN id=$ID RETIRE_CANDIDATE=$HERDR_PRESENTATION_RETIRE_CANDIDATE T=$T SESSION=$HERDR_PRESENTATION_SESSION PANE=$HERDR_PRESENTATION_PANE WT=$WT" >&2
 if [ "$HERDR_PRESENTATION_RETIRE_CANDIDATE" = 1 ]; then
-  if [ "$(fm_backend_herdr_pane_agent_state "$HERDR_PRESENTATION_SESSION" "$HERDR_PRESENTATION_PANE")" = dead ]; then
+  DEBUG_STATE=$(fm_backend_herdr_pane_agent_state "$HERDR_PRESENTATION_SESSION" "$HERDR_PRESENTATION_PANE")
+  echo "DEBUGTEARDOWN id=$ID agent_state=$DEBUG_STATE" >&2
+  if [ "$DEBUG_STATE" = dead ]; then
     rm -f "$HERDR_PRESENTATION_JOURNAL"
   else
     echo "warning: exact herdr task-pane close could not be confirmed for $ID; retaining the presentation journal and attempting no workspace cleanup" >&2
