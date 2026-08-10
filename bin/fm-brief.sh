@@ -468,14 +468,15 @@ EOF
     IFS= read -r -d '' DOD <<EOF || true
 # Definition of done
 Delivery contract: mode=no-mistakes
-The task is complete only when committed on your branch.
-When you believe it is complete, append \`done: {summary}\` to the status file and stop.
-Firstmate will then instruct you to run /no-mistakes to validate and ship a PR.
+Implementing and committing is the MIDPOINT of this task, not the finish - the only \`done:\` this task ever reports is the CI-green line at the very end of this section, after a PR exists.
+When your implementation is committed, append \`working: implementation committed, starting /no-mistakes\` to the status file and keep going in the same turn: do not stop, and do not append \`done:\` yet.
+Start no-mistakes yourself right away - do not wait for firstmate to tell you to; firstmate is not what starts your validation.
 
-You drive no-mistakes by responding to its gates, not by implementing fixes.
+You drive no-mistakes to the CI-ready return point yourself, end to end, by responding to its gates - not by implementing fixes, and not by starting a run and stepping away from it.
 Follow the guidance no-mistakes itself provides for the mechanics: it loads when you invoke /no-mistakes, and \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
 When starting no-mistakes, make \`--intent\` preserve all relevant content from this brief's \`# Task\` section plus every later accepted Firstmate requirement, clarification, constraint, exclusion, and supersession, carrying only each requirement's current accepted form; retain direct requirements instead of substituting a diff summary, and exclude generic operational, status, delivery, and other scaffold boilerplate unless it is task-specific.
 Do not hand-edit, commit, or fix findings yourself while a run is active - the pipeline applies every fix.
+A run parked at a gate sends no notification of its own: nothing pings you and nothing pings firstmate when a gate opens, so if you end your turn without one of the two mechanisms below actively watching it, the run just sits there indefinitely with nobody coming back to it.
 Waiting on a gate or CI splits into three rules, and skipping any one of them is what turns a routine wait into a false alarm or a dead pipeline:
 1. If the wait is short and you need the result before you can continue, poll its state directly in the foreground. Leave at least 180 seconds between polls: each check costs a full turn and a tighter loop buys nothing, since the state it reads changes on the order of minutes. Do not report a state that has not changed.
 2. If the wait is long and will resolve on its own, hand it to a harness monitoring feature whose completion is GUARANTEED to wake or resume this same agent, then end the turn. That guarantee is the whole test: a background job with no confirmed callback is not a monitor no matter how it looks, so \`&\`, \`nohup\`, \`disown\`, output redirected to a file nobody re-checks, and a detached terminal with no verified callback are all forbidden here. If you are about to rely on something already running in the background, first confirm it is actually still alive before you wait on it - do not assume a launch succeeded.
@@ -488,7 +489,7 @@ Two firstmate-specific rules layer on top of that guidance:
   When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
 - Avoid \`--yes\`: it would silently bypass firstmate's authority check and any required captain escalation.
 
-After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), append \`done: PR {url} checks green\` and stop. You are finished.
+After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), append \`done: PR {url} checks green\` and stop. This is the only \`done:\` this task ever reports. You are finished.
 EOF
     ;;
 esac
