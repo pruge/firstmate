@@ -65,26 +65,30 @@
 # owns that rule), so a present index is current. That same rule also removes,
 # right after building or syncing it, any index it measures as covering only a
 # sliver of a subtree's tracked files or none at all (captain override,
-# 2026-08-09), so a repo or subtree dominated by unsupported languages - shell
-# and Markdown, for instance - legitimately carries no `.codegraph/` anywhere;
-# that is the general "skip CodeGraph" instruction applying normally, not a
-# broken path. The section has the crewmate LOCATE any index before querying -
-# it need not sit at the worktree root, since codegraph resolves a query path
-# upward but never downward - and use that same path for every later
-# `codegraph` command (`status`, `explore`, `sync`). It forbids initing beside
-# an index that already exists, because the second index would answer nearby
-# queries with stale symbols; init is for the rare case where firstmate's own
-# pass never ran or failed, at the repository root (docs/verification/codegraph-index-scope.md
-# measured no benefit to pre-splitting by subtree). When several indexes already
-# exist and the task's own work spans more than one, it queries each covering
-# index rather than picking just one.
-# Self-check with `codegraph status` against a path the listing named: no
-# index there means the path is wrong, re-check it. When the listing itself
-# found nothing anywhere in the worktree, that means CodeGraph judged the
-# whole thing not worth indexing (the removal above, or codegraph never ran) -
-# fall back to ordinary tools rather than treat it as a wrong path. Otherwise
-# prefer `codegraph explore` over grep, run `codegraph sync` after edits, and
-# never commit the machine-local `.codegraph/` index.
+# 2026-08-09), so a tree can legitimately carry no `.codegraph/` anywhere; the
+# section treats that as the general "skip CodeGraph" instruction applying
+# normally, not a broken path. It does NOT predict which repos end up that way -
+# a repo that looks like shell and Markdown can still index its supporting
+# TypeScript, and firstmate itself does.
+# The section has the crewmate LOCATE any index before querying - it need not
+# sit at the worktree root, since codegraph resolves a query path upward but
+# never downward - and use that same path for every later `codegraph` command.
+# It forbids initing beside an index that already exists, because the second
+# index would answer nearby queries with stale symbols; init is for the rare
+# case where firstmate's own pass never ran or failed, at the repository root
+# (docs/verification/codegraph-index-scope.md measured no benefit to
+# pre-splitting by subtree). When several indexes already exist and the task's
+# own work spans more than one, it queries each covering index rather than
+# picking just one.
+# The command table is the section's other half, and it exists because naming
+# only `explore` made crews fall back to grep for questions the tool answers
+# directly (`impact` before an edit, `affected` after one). Each row states the
+# question that command answers, so the choice needs no recall. `codegraph
+# --help` is authoritative for syntax; keep the rows to purpose. The trailing
+# rules are the ones a crew cannot infer from the tool's own output: `status`
+# claims freshness it cannot know, the index does not follow edits, the `kind`
+# column carries meaning the counts do not, `No results found` is not absence,
+# route wiring is invisible to the graph, and `.codegraph/` is never committed.
 # Refuses to overwrite an existing brief.
 set -eu
 
@@ -336,12 +340,31 @@ fi
 # "competition never happens" claim either - the measurement's scope is one repo; re-measure
 # before assuming it holds for a much larger one.
 IFS= read -r -d '' CODEGRAPH_SECTION <<'EOF' || true
-**Prefer CodeGraph over grep for exploring code, when an index exists.** This brief overrides the general "no `.codegraph/`, skip CodeGraph" environment instruction only where an index actually exists: firstmate already matched this worktree's CodeGraph index to its checked-out code before your first turn, so a present index is current - use it rather than skipping it. firstmate also removes, right after building or syncing it, any index it measures as covering only a sliver of a subtree's tracked files or none at all, so a repository or subtree dominated by unsupported languages - shell and Markdown, for instance - legitimately carries no `.codegraph/` at all; treat that the same as the general environment instruction and use ordinary tools, it is not a sign the path is wrong.
-Find where any index lives before you query, because it does not have to sit at the worktree root: `codegraph` resolves a query path upward to the nearest enclosing `.codegraph/` but never downward, so a repository whose code lives in a subdirectory keeps its index beside that code. List them with `find . \( -name .git -o -name node_modules \) -prune -o -type d -name .codegraph -print -prune`, then use that directory's path for every `codegraph` command in this task - `status`, `explore`, and `sync` alike. If the listing shows several and your task's work stays inside one subtree, pick the index covering it and say in your report or status which you chose; if your task's work spans more than one of them, query each covering index in turn instead of picking just one, since a question that crosses that boundary can come back empty or misleadingly incomplete from a single index.
-Do not run `codegraph init` beside an index that already exists, including at the repository root when the existing one sits below it: a second index makes each query answer from whichever copy is nearest the path you pass, and the copy you are not syncing answers with outdated symbols as if they were current. When the listing above finds none anywhere, that usually means firstmate already judged this repository or subtree not worth indexing and removed what it built, so lean toward skipping CodeGraph rather than rebuilding it. Init only when the listing above finds none at all, and then init one index at the repository root.
-Run `codegraph status` against a path the listing named: if it reports no index there, the path is wrong - re-check it. If the listing itself found no index anywhere in the worktree, that is not a wrong path - it means CodeGraph judged this repository or subtree not worth indexing and removed what it built (or never ran there), so fall back to ordinary tools instead, matching the general "skip CodeGraph" default. Shell scripts and Markdown are not supported languages, so a shell-and-docs repo (firstmate itself is one) legitimately ends up with no index at all; that is expected, not an error.
-When the index is real, reach for `codegraph explore "<symbols or question>"` (same path) BEFORE grep, find, or opening files to locate or understand code - one call answers most structural questions. Trust what it returns: the source it prints is already read, so do not re-grep to confirm it.
-The index does not follow your edits on its own when you drive CodeGraph from the shell, so run `codegraph sync` (same path) after you change files and before the next `codegraph explore`, or read the files you just edited directly. If a response warns that a file is pending, read that file directly too.
+**Use CodeGraph, not grep, to locate and understand code - wherever an index exists.** This brief overrides the general "no `.codegraph/`, skip CodeGraph" environment instruction only where an index actually exists: firstmate matched this worktree's indexes to its checked-out code before your first turn, so a present index is current.
+Find where the index lives before you query. It need not sit at the worktree root, because `codegraph` resolves a query path upward to the nearest enclosing `.codegraph/` but never downward, so a repository whose code lives in a subdirectory keeps its index beside that code. List them with `find . \( -name .git -o -name node_modules \) -prune -o -type d -name .codegraph -print -prune`, then use that directory's path for every `codegraph` command in this task. If the listing shows several and your work stays inside one subtree, use the index covering it; if your work spans more than one, query each covering index in turn rather than picking one, since a question crossing that boundary comes back empty or misleadingly incomplete from a single index.
+Self-check with `codegraph status` against a path the listing named. Existence is the only thing that answer can be trusted for, never freshness (see the rules under the table): if it reports no index there, the path is wrong - re-check it. If the listing itself found no index anywhere in the worktree, that is not a wrong path; firstmate judged this tree not worth indexing, or codegraph never ran here, so fall back to ordinary tools.
+Do not run `codegraph init` beside an index that already exists: a second index answers each query from whichever copy is nearest the path you pass, and the copy you are not syncing answers with outdated symbols as if they were current. Init only when the listing above finds none at all, and then init one index at the repository root.
+
+**Pick the command that answers your actual question. `explore` is where you start when you do not know the area yet, not the only tool you have.**
+
+| Command | Answers | When |
+|---|---|---|
+| `explore "<symbols or question>"` | how does this area work | you do not know the area yet - source plus call paths in one shot |
+| `query "<symbol>"` | does this name exist | confirming an anchor before you rely on it |
+| `node "<symbol>"` | this one symbol | its source, callers, callees, and CURRENT line numbers |
+| `callers "<symbol>"` | who calls it | BEFORE you change a signature or a behavior |
+| `callees "<symbol>"` | what does it depend on | tracing where a decision actually comes from |
+| `impact "<symbol>"` | what breaks if I change it | BEFORE editing - never count blast radius with grep |
+| `affected <changed files>` | which tests must I run | AFTER editing, before reaching for the whole suite |
+| `files` | what the index sees | getting a sense of scope |
+| `sync` | pick up changes | after your own edits, and after any pull or branch switch |
+| `index` | full rebuild | only for mass moves or renames, or a suspected corrupt index |
+
+`status` reports `Index is up to date` even when the index is stale, so never treat it as evidence of freshness.
+The index does not follow your edits on its own, so run `sync` after you change files and before the next query, or read what you just edited directly. If a response warns that a file is pending, read that file directly too.
+Read the `kind` column rather than the count. A caller's line number is where that CALLER symbol is defined, not where the call happens; a `file` node at line 1 is not a truncated value but a call sitting outside any named function; and `callees` counts type references as well as calls.
+`No results found` is not proof the code does not exist. Cross-check with grep or by reading the file, then rebuild with `index` and ask again, before you conclude that anything is missing.
+CodeGraph cannot see route wiring, because path strings in a dispatch table are data rather than symbols. If you changed routes, start the app and check them for real.
 Never commit the index: `.codegraph/` is machine-local and large. If this repo does not already ignore it, leave it untracked and never `git add -A` - do not add the ignore entry as a side change to an unrelated task.
 EOF
 CODEGRAPH_SECTION=${CODEGRAPH_SECTION%$'\n'}
@@ -454,7 +477,7 @@ Follow the guidance no-mistakes itself provides for the mechanics: it loads when
 When starting no-mistakes, make \`--intent\` preserve all relevant content from this brief's \`# Task\` section plus every later accepted Firstmate requirement, clarification, constraint, exclusion, and supersession, carrying only each requirement's current accepted form; retain direct requirements instead of substituting a diff summary, and exclude generic operational, status, delivery, and other scaffold boilerplate unless it is task-specific.
 Do not hand-edit, commit, or fix findings yourself while a run is active - the pipeline applies every fix.
 Waiting on a gate or CI splits into three rules, and skipping any one of them is what turns a routine wait into a false alarm or a dead pipeline:
-1. If the wait is short and you need the result before you can continue, poll its state directly in the foreground.
+1. If the wait is short and you need the result before you can continue, poll its state directly in the foreground. Leave at least 180 seconds between polls: each check costs a full turn and a tighter loop buys nothing, since the state it reads changes on the order of minutes. Do not report a state that has not changed.
 2. If the wait is long and will resolve on its own, hand it to a harness monitoring feature whose completion is GUARANTEED to wake or resume this same agent, then end the turn. That guarantee is the whole test: a background job with no confirmed callback is not a monitor no matter how it looks, so \`&\`, \`nohup\`, \`disown\`, output redirected to a file nobody re-checks, and a detached terminal with no verified callback are all forbidden here. If you are about to rely on something already running in the background, first confirm it is actually still alive before you wait on it - do not assume a launch succeeded.
 3. Whichever way you wait, if the wait is long, append \`$PAUSED_VERB: {why}\` before you end the turn. Skipping this is not a shortcut: firstmate cannot tell a deliberate wait from a wedge without it, and will raise a false alarm on every check until you leave it. A gate that surfaces a decision still wakes firstmate through \`needs-decision\`, so leaving \`$PAUSED_VERB:\` behind never risks missing one.
 Never end a turn with no foreground poll, no guaranteed-wake monitor, and no \`$PAUSED_VERB:\` line - that combination can end your session while the pipeline stays alive waiting for a response nobody will send.

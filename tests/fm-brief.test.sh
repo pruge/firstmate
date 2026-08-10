@@ -746,12 +746,12 @@ test_codegraph_section_overrides_global_skip_rule_and_scopes_index() {
   assert_present "$brief" "ship brief was not scaffolded"
   assert_grep "overrides" "$brief" \
     "CodeGraph section must state it overrides the general no-index-skip-it rule"
-  assert_grep "already matched this worktree's CodeGraph index to its checked-out code before your first turn" "$brief" \
+  assert_grep "matched this worktree's indexes to its checked-out code before your first turn" "$brief" \
     "CodeGraph section must tell the crew the index is already present and current, not something to build"
   assert_grep "subtree" "$brief" \
     "CodeGraph section must tell the crew to scope the index to the subtree it is working on"
-  assert_grep "use that directory's path for every \`codegraph\` command in this task - \`status\`, \`explore\`, and \`sync\` alike" "$brief" \
-    "CodeGraph section must carry the located index path through status, explore, and sync"
+  assert_grep "use that directory's path for every \`codegraph\` command in this task" "$brief" \
+    "CodeGraph section must carry the located index path through every codegraph command"
   assert_grep "if it reports no index there, the path is wrong - re-check it" "$brief" \
     "CodeGraph section must separate a missing index at a listed path (wrong path) from no index anywhere (not worth indexing), not conflate them"
   assert_grep "If the listing itself found no index anywhere in the worktree, that is not a wrong path" "$brief" \
@@ -806,9 +806,70 @@ test_codegraph_section_covers_cross_subtree_work_across_existing_indexes() {
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   assert_present "$brief" "ship brief was not scaffolded"
-  assert_grep "if your task's work spans more than one of them, query each covering index in turn instead of picking just one" "$brief" \
+  assert_grep "if your work spans more than one, query each covering index in turn rather than picking one" "$brief" \
     "CodeGraph section must tell the crew to query every covering index, not just one, when the task's work spans several existing indexes"
   pass "fm-brief: CodeGraph section tells the crew to query every covering index for cross-subtree work"
+}
+
+# Naming only `explore` sent crews to grep for questions codegraph answers directly:
+# blast radius before an edit (`impact`) and the test set after one (`affected`). The
+# table has to name a command per question, and it has to keep the rules a crew cannot
+# infer from the tool's own output - `status` claims a freshness it cannot know, the
+# index does not follow edits, and route wiring is not in the graph at all.
+test_codegraph_section_names_a_command_per_question_not_just_explore() {
+  local home id brief
+  home="$TMP_ROOT/codegraph-commands-home"
+  mkdir -p "$home/data"
+  id="brief-codegraph-commands"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "ship brief was not scaffolded"
+  assert_grep "not the only tool you have" "$brief" \
+    "CodeGraph section must say explore is the starting point, not the whole tool"
+  # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
+  assert_grep '`impact "<symbol>"`' "$brief" \
+    "CodeGraph section must name impact so blast radius is not counted with grep"
+  assert_grep "BEFORE editing - never count blast radius with grep" "$brief" \
+    "CodeGraph section must place impact before the edit and rule out the grep substitute"
+  # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
+  assert_grep '`affected <changed files>`' "$brief" \
+    "CodeGraph section must name affected so the crew narrows the test set after an edit"
+  # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
+  assert_grep '`callers "<symbol>"`' "$brief" \
+    "CodeGraph section must name callers so a signature change is scoped from the graph"
+  # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
+  assert_grep '`callees "<symbol>"`' "$brief" \
+    "CodeGraph section must name callees so a decision's dependencies are traced from the graph"
+  assert_grep "never treat it as evidence of freshness" "$brief" \
+    "CodeGraph section must keep the rule that status reports up-to-date even when the index is stale"
+  assert_grep "does not follow your edits on its own" "$brief" \
+    "CodeGraph section must keep the rule that the index needs a sync after edits"
+  assert_grep "Read the \`kind\` column rather than the count" "$brief" \
+    "CodeGraph section must keep the rule that caller results are read by kind, not by count"
+  assert_grep "is not proof the code does not exist" "$brief" \
+    "CodeGraph section must keep the rule that No results found requires a cross-check"
+  assert_grep "cannot see route wiring" "$brief" \
+    "CodeGraph section must keep the rule that route strings are invisible to the graph"
+  pass "fm-brief: CodeGraph section names a command per question instead of only explore"
+}
+
+# Without a stated interval a crew polls the pipeline every few seconds, burning a full
+# turn per check against state that moves on the order of minutes.
+test_no_mistakes_dod_bounds_the_foreground_poll_interval() {
+  local home id brief
+  home="$TMP_ROOT/poll-cadence-home"
+  mkdir -p "$home/data"
+  id="brief-poll-cadence"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "ship brief was not scaffolded"
+  assert_grep "Leave at least 180 seconds between polls" "$brief" \
+    "no-mistakes DOD must give the foreground poll a concrete minimum interval"
+  assert_grep "each check costs a full turn" "$brief" \
+    "no-mistakes DOD must say why a tight poll loop is expensive, not just forbid it"
+  assert_grep "Do not report a state that has not changed" "$brief" \
+    "no-mistakes DOD must stop the crew reporting unchanged state as progress"
+  pass "fm-brief: no-mistakes DOD bounds the foreground poll interval"
 }
 
 test_no_mistakes_dod_splits_gate_wait_into_three_branches() {
@@ -903,18 +964,18 @@ test_codegraph_setup_block_present_in_scout_and_ship() {
     || fail "fm-brief.sh scout scaffold exited non-zero"
   brief="$BRIEF_HOME/data/brief-codegraph-scout/brief.md"
   assert_present "$brief" "scout brief was not scaffolded"
-  assert_grep "Find where any index lives before you query" "$brief" \
+  assert_grep "Find where the index lives before you query" "$brief" \
     "scout brief must instruct the worker to locate the existing CodeGraph index first"
-  assert_grep "reach for \`codegraph explore" "$brief" \
+  assert_grep "Use CodeGraph, not grep, to locate and understand code" "$brief" \
     "scout brief must tell the worker to prefer CodeGraph over grep, find, or opening files"
 
   FM_HOME="$BRIEF_HOME" "$ROOT/bin/fm-brief.sh" brief-codegraph-ship alpha --mode no-mistakes >/dev/null 2>&1 \
     || fail "fm-brief.sh ship scaffold exited non-zero"
   brief="$BRIEF_HOME/data/brief-codegraph-ship/brief.md"
   assert_present "$brief" "ship brief was not scaffolded"
-  assert_grep "Find where any index lives before you query" "$brief" \
+  assert_grep "Find where the index lives before you query" "$brief" \
     "ship brief must instruct the worker to locate the existing CodeGraph index first"
-  assert_grep "reach for \`codegraph explore" "$brief" \
+  assert_grep "Use CodeGraph, not grep, to locate and understand code" "$brief" \
     "ship brief must tell the worker to prefer CodeGraph over grep, find, or opening files"
 
   pass "fm-brief: scout and ship briefs both carry the CodeGraph adoption block"
@@ -968,6 +1029,8 @@ test_decision_key_position_pinned_in_ship_and_scout
 test_codegraph_section_overrides_global_skip_rule_and_scopes_index
 test_codegraph_section_locates_the_index_and_forbids_a_second_one
 test_codegraph_section_covers_cross_subtree_work_across_existing_indexes
+test_codegraph_section_names_a_command_per_question_not_just_explore
 test_no_mistakes_dod_splits_gate_wait_into_three_branches
+test_no_mistakes_dod_bounds_the_foreground_poll_interval
 test_ship_dod_requires_browser_verification_with_precondition
 test_status_protocol_covers_captain_check_and_captain_direct_work
