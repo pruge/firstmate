@@ -49,7 +49,14 @@ case "${1:-}" in
   display-message) printf 'firstmate\n'; exit 0 ;;
   list-windows) exit 0 ;;
   has-session|new-session|new-window|kill-window) exit 0 ;;
-  send-keys) exit 0 ;;
+  send-keys)
+    # Log every send-keys invocation verbatim when a log path is set, so a
+    # test can assert exactly what command text was sent into the pane
+    # (e.g. `treehouse get` vs a reuse `cd <recorded worktree>`), without
+    # changing behavior for callers that never set FM_FAKE_SENDLOG.
+    [ -z "${FM_FAKE_SENDLOG:-}" ] || printf '%s\n' "$*" >> "$FM_FAKE_SENDLOG"
+    exit 0
+    ;;
 esac
 exit 0
 SH
@@ -64,13 +71,14 @@ SH
 # entirely, distinct from both the project and the worktree - mirroring the
 # live incident where the stale read was another real firstmate home).
 make_settle_case() {
-  local name=$1 id=$2 stale_reads=$3 case_dir home proj wt stale fakebin countfile
+  local name=$1 id=$2 stale_reads=$3 case_dir home proj wt stale fakebin countfile sendlog
   case_dir="$TMP_ROOT/$name"
   home="$case_dir/home"
   proj="$case_dir/project"
   wt="$case_dir/wt"
   stale="$case_dir/stale-other-checkout"
   countfile="$case_dir/pane-call-count"
+  sendlog="$case_dir/sendlog"
   fakebin=$(make_settle_fakebin "$case_dir/fake")
   mkdir -p "$home/data" "$home/projects" "$home/state" "$home/config"
   printf 'codex\n' > "$home/config/crew-harness"
@@ -79,11 +87,11 @@ make_settle_case() {
   mkdir -p "$home/data/$id"
   printf 'brief for %s\n' "$id" > "$home/data/$id/brief.md"
   touch "$home/state/.last-watcher-beat"
-  printf '%s\n' "$case_dir|$home|$proj|$wt|$stale|$fakebin|$countfile|$stale_reads"
+  printf '%s\n' "$case_dir|$home|$proj|$wt|$stale|$fakebin|$countfile|$stale_reads|$sendlog"
 }
 
 read_settle_record() {
-  IFS='|' read -r _ HOME_DIR PROJ_DIR WT_DIR STALE_DIR FAKEBIN_DIR COUNTFILE STALE_READS <<EOF
+  IFS='|' read -r _ HOME_DIR PROJ_DIR WT_DIR STALE_DIR FAKEBIN_DIR COUNTFILE STALE_READS SENDLOG <<EOF
 $1
 EOF
 }
@@ -96,6 +104,7 @@ run_settle_spawn() {
     FM_SPAWN_NO_GUARD=1 TMUX="fake,1,0" \
     FM_FAKE_PANE_PATH="$WT_DIR" FM_FAKE_PANE_STALE="$STALE_DIR" \
     FM_FAKE_PANE_STALE_READS="$STALE_READS" FM_FAKE_PANE_COUNTFILE="$COUNTFILE" \
+    FM_FAKE_SENDLOG="$SENDLOG" \
     PATH="$FAKEBIN_DIR:$PATH" \
     "$SPAWN" "$id" "$PROJ_DIR" --mode no-mistakes --yolo off 2>&1
 }
@@ -141,7 +150,123 @@ test_already_settled_pane_costs_one_confirm_sleep() {
   pass "an already-settled pane confirms via the existing inter-poll sleep, not an extra full cycle"
 }
 
+# A clean, still-existing recorded worktree (state/<id>.meta's worktree=) is
+# reused in place: `treehouse get` must never be sent, and the pane must be
+# sent into that exact recorded path instead - the fix for the relaunch-split
+# incident (a dead worker's session gone but its worktree, with no commits,
+# still on disk; relaunching the same task id must land back in that same
+# worktree, not a fresh empty one).
+test_recorded_worktree_reused_when_clean() {
+  local rec id out status
+  id=settle-reuse-clean-z3
+  rec=$(make_settle_case settle-reuse-clean "$id" 0)
+  read_settle_record "$rec"
+  fm_write_meta "$HOME_DIR/state/$id.meta" "worktree=$WT_DIR"
+
+  out=$(run_settle_spawn "$id")
+  status=$?
+  expect_code 0 "$status" "spawn should succeed reusing a clean recorded worktree"
+  assert_contains "$out" "spawned $id" "spawn did not report success"
+  assert_grep "worktree=$WT_DIR" "$HOME_DIR/state/$id.meta" \
+    "meta did not record the reused worktree"
+  assert_no_grep "treehouse get" "$SENDLOG" \
+    "spawn ran 'treehouse get' instead of reusing the recorded worktree"
+  assert_grep "$WT_DIR" "$SENDLOG" \
+    "spawn never sent the pane into the recorded worktree"
+  pass "a clean recorded worktree is reused instead of allocating a fresh one"
+}
+
+# A recorded worktree with uncommitted work must refuse the spawn outright -
+# silently falling back to a fresh worktree here is exactly the incident this
+# task exists to close (the dead worker's 11 uncommitted files would have been
+# orphaned in a worktree nobody was pointed at anymore).
+test_recorded_worktree_dirty_refuses_new_worktree() {
+  local rec id out status meta_before meta_after
+  id=settle-reuse-dirty-z4
+  rec=$(make_settle_case settle-reuse-dirty "$id" 0)
+  read_settle_record "$rec"
+  fm_write_meta "$HOME_DIR/state/$id.meta" "worktree=$WT_DIR"
+  meta_before=$(cat "$HOME_DIR/state/$id.meta")
+  printf 'uncommitted work\n' >> "$WT_DIR/README.md"
+
+  out=$(run_settle_spawn "$id")
+  status=$?
+  expect_code 1 "$status" "spawn must refuse when the recorded worktree has uncommitted work"
+  assert_contains "$out" "uncommitted work" "refusal did not explain the uncommitted work"
+  assert_contains "$out" "FM_SPAWN_ALLOW_NEW_WORKTREE" \
+    "refusal did not name the explicit override for a genuinely fresh worktree"
+  assert_absent "$SENDLOG" \
+    "spawn sent pane commands despite refusing over the dirty recorded worktree"
+  meta_after=$(cat "$HOME_DIR/state/$id.meta")
+  [ "$meta_before" = "$meta_after" ] || fail "refused spawn must not rewrite the task's meta"
+  pass "a dirty recorded worktree refuses the spawn instead of silently splitting the task"
+}
+
+# FM_SPAWN_ALLOW_NEW_WORKTREE=1 is the explicit escape hatch: with it set, a
+# dirty recorded worktree no longer blocks the spawn, and a fresh worktree is
+# acquired instead - leaving the old, uncommitted one untouched on disk.
+test_recorded_worktree_dirty_allows_new_worktree_when_explicit() {
+  local rec id out status
+  id=settle-reuse-dirty-override-z5
+  rec=$(make_settle_case settle-reuse-dirty-override "$id" 0)
+  read_settle_record "$rec"
+  fm_write_meta "$HOME_DIR/state/$id.meta" "worktree=$WT_DIR"
+  printf 'uncommitted work\n' >> "$WT_DIR/README.md"
+
+  out=$(FM_SPAWN_ALLOW_NEW_WORKTREE=1 run_settle_spawn "$id")
+  status=$?
+  expect_code 0 "$status" "the explicit override should let the spawn proceed"
+  assert_grep "treehouse get" "$SENDLOG" \
+    "the explicit override should still acquire a fresh worktree via treehouse get"
+  assert_present "$WT_DIR/README.md" "the old, dirty worktree must be left on disk untouched"
+  pass "the explicit override acquires a fresh worktree and leaves the dirty one in place"
+}
+
+# A recorded worktree that no longer exists on disk (returned, pruned, or
+# manually removed) is not a reuse candidate: fall through to `treehouse get`
+# exactly as before, with no explicit override required.
+test_recorded_worktree_vanished_gets_fresh_worktree() {
+  local rec id out status
+  id=settle-reuse-vanished-z6
+  rec=$(make_settle_case settle-reuse-vanished "$id" 0)
+  read_settle_record "$rec"
+  fm_write_meta "$HOME_DIR/state/$id.meta" "worktree=$TMP_ROOT/settle-reuse-vanished/gone-wt"
+
+  out=$(run_settle_spawn "$id")
+  status=$?
+  expect_code 0 "$status" "spawn should succeed falling back to a fresh worktree"
+  assert_grep "treehouse get" "$SENDLOG" \
+    "spawn did not fall back to treehouse get when the recorded worktree was gone"
+  assert_grep "worktree=$WT_DIR" "$HOME_DIR/state/$id.meta" \
+    "meta did not record the freshly acquired worktree"
+  pass "a vanished recorded worktree falls back to a fresh worktree automatically"
+}
+
+# A brand new task id, with no prior meta at all, is unaffected: it still
+# gets a fresh worktree via treehouse get exactly as before this change.
+test_no_recorded_worktree_gets_fresh_worktree() {
+  local rec id out status
+  id=settle-reuse-none-z7
+  rec=$(make_settle_case settle-reuse-none "$id" 0)
+  read_settle_record "$rec"
+  assert_absent "$HOME_DIR/state/$id.meta" "test setup should start with no recorded meta"
+
+  out=$(run_settle_spawn "$id")
+  status=$?
+  expect_code 0 "$status" "spawn should succeed for a brand new task id"
+  assert_grep "treehouse get" "$SENDLOG" \
+    "a brand new task id must still acquire a worktree via treehouse get"
+  assert_grep "worktree=$WT_DIR" "$HOME_DIR/state/$id.meta" \
+    "meta did not record the freshly acquired worktree"
+  pass "a brand new task id with no recorded worktree gets a fresh one, unchanged"
+}
+
 test_single_stale_first_read_is_not_accepted
 test_already_settled_pane_costs_one_confirm_sleep
+test_recorded_worktree_reused_when_clean
+test_recorded_worktree_dirty_refuses_new_worktree
+test_recorded_worktree_dirty_allows_new_worktree_when_explicit
+test_recorded_worktree_vanished_gets_fresh_worktree
+test_no_recorded_worktree_gets_fresh_worktree
 
 echo "# all fm-spawn-worktree-settle tests passed"
