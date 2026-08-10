@@ -256,7 +256,7 @@ test_ship_mode_is_explicit_not_registry() {
   brief="$home/data/brief-explicit-a5/brief.md"
   grep -qx "Delivery contract: mode=no-mistakes" "$brief" \
     || fail "registered direct-PR posture overrode the explicit --mode"
-  assert_grep "Firstmate will then instruct you to run /no-mistakes" "$brief" \
+  assert_grep "Start no-mistakes yourself right away" "$brief" \
     "explicit no-mistakes brief did not render the pipeline definition of done"
 
   # An unregistered project is not a blocker either, because nothing is looked up.
@@ -352,6 +352,40 @@ test_no_mistakes_dod_wording() {
   assert_grep "firstmate's authority check" "$brief" \
     "no-mistakes DOD lost the apostrophe prose that the structural fix makes parse-safe"
   pass "fm-brief.sh: no-mistakes DOD keeps its apostrophe prose, now parse-safe"
+}
+
+# Regression for the done-too-early defect (2026-08-09, repeated live during
+# this fix on spawn-ports-bypass-guard): the no-mistakes DOD used to tell a
+# crew to append `done: {summary}` right after committing, using the same
+# terminal verb rule 4 reserves for the actual finish - a crew that stopped
+# there was following the brief as written. Pin that the misreadable sentence
+# is gone and the corrected wording (mid-task working:, drive validation
+# yourself, parking-produces-no-notification, only one true done:) is present.
+test_no_mistakes_dod_no_premature_done() {
+  local home id brief
+  home="$TMP_ROOT/no-premature-done-home"
+  mkdir -p "$home/data"
+  id="brief-no-premature-done-b2"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "brief was not scaffolded"
+  assert_no_grep "The task is complete only when committed on your branch\." "$brief" \
+    "no-mistakes DOD must not equate a bare commit with task completion"
+  # shellcheck disable=SC2016  # single quotes are deliberate: the backtick must stay literal
+  assert_no_grep 'append `done: {summary}`' "$brief" \
+    "no-mistakes DOD must not tell the crew to post a terminal done: right after committing"
+  assert_grep "Implementing and committing is the MIDPOINT of this task, not the finish" "$brief" \
+    "no-mistakes DOD must say committing is only the midpoint"
+  # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+  assert_grep 'append `working: implementation committed, starting /no-mistakes`' "$brief" \
+    "no-mistakes DOD must give the post-commit signal as a nonterminal working: line"
+  assert_grep "Start no-mistakes yourself right away - do not wait for firstmate to tell you to" "$brief" \
+    "no-mistakes DOD must say the crew starts validation itself, not firstmate"
+  assert_grep "A run parked at a gate sends no notification of its own" "$brief" \
+    "no-mistakes DOD must state plainly that parking at a gate produces no notification"
+  assert_grep "This is the only \`done:\` this task ever reports" "$brief" \
+    "no-mistakes DOD must mark the CI-green line as the task's one true done:"
+  pass "fm-brief.sh: no-mistakes DOD no longer invites a premature done:"
 }
 
 test_ship_project_memory_wording() {
@@ -1012,6 +1046,7 @@ test_ship_mode_is_explicit_not_registry
 test_delivery_flags_are_refused_where_they_do_not_apply
 test_faster_paths_use_configured_authority_without_stacked_review
 test_no_mistakes_dod_wording
+test_no_mistakes_dod_no_premature_done
 test_ship_project_memory_wording
 test_herdr_lab_contract_is_explicit_and_complete
 test_herdr_lab_contract_quotes_foreign_firstmate_path

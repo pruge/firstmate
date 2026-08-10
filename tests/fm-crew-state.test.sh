@@ -1062,6 +1062,84 @@ test_no_run_idle_pane_uses_keyed_log() {
   pass "no run + idle pane parses keyed status syntax"
 }
 
+# (g'') a no-mistakes task that never reached an attributed run and reports
+# done: with no PR URL must NOT be accepted as done: no-mistakes was never run,
+# so the pipeline never validated anything. Regression for a real 2026-08-09
+# incident (studio-app-02-move, herdr-test-sleep-orphan-stall) repeated live
+# during this very fix (spawn-ports-bypass-guard): a no-mistakes worker
+# committed and posted `done: ...committed on fm/spawn-ports-bypass-guard`
+# with no PR, and stopped. Pinned with that exact real status line.
+test_no_mistakes_done_without_pr_not_accepted() {
+  reset_fakes
+  local d; d=$(new_case nm-done-no-pr)
+  make_repo_on_branch "$d/wt" fm/spawn-ports-bypass-guard
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/spawn-ports-bypass-guard.meta" "window=fm:fm-spawn-ports-bypass-guard" "worktree=$d/wt" "kind=ship" "mode=no-mistakes" "harness=claude"
+  printf 'done: implemented and committed on fm/spawn-ports-bypass-guard\n' > "$d/state/spawn-ports-bypass-guard.status"
+  FM_FAKE_AXI_STATUS=""
+  FM_FAKE_RUNS_LIST=""
+  FM_FAKE_BUSY=0
+  arm_idle_record "$d/state" spawn-ports-bypass-guard
+  local out; out=$(run_crew_state "$d" spawn-ports-bypass-guard)
+  assert_not_contains "$out" "state: done" "a no-mistakes done: without a PR URL must not be accepted as done"
+  assert_contains "$out" "state: working" "it is reported as still working instead"
+  assert_contains "$out" "no-mistakes was never run" "the detail names the actual defect as grounds to send it back"
+  pass "no-mistakes done: without a PR URL is not accepted as the task's completion"
+}
+
+# The genuine no-mistakes completion (done: PR <url> checks green) is
+# unaffected by the guard above.
+test_no_mistakes_done_with_pr_still_accepted() {
+  reset_fakes
+  local d; d=$(new_case nm-done-with-pr)
+  make_repo_on_branch "$d/wt" fm/feat-nm-ok
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-nm-ok.meta" "window=fm:fm-feat-nm-ok" "worktree=$d/wt" "kind=ship" "mode=no-mistakes" "harness=claude"
+  printf 'done: PR https://github.com/o/r/pull/9 checks green\n' > "$d/state/feat-nm-ok.status"
+  FM_FAKE_AXI_STATUS=""
+  FM_FAKE_RUNS_LIST=""
+  FM_FAKE_BUSY=0
+  arm_idle_record "$d/state" feat-nm-ok
+  local out; out=$(run_crew_state "$d" feat-nm-ok)
+  assert_contains "$out" "state: done" "a done: line with a PR URL is still accepted for no-mistakes"
+  pass "no-mistakes done: with a PR URL is unaffected by the guard"
+}
+
+# direct-PR, local-only, and scout tasks have no PR-URL requirement in their own
+# done contracts (bin/fm-brief.sh) and must be completely unaffected: the guard
+# fires only when mode is exactly no-mistakes.
+test_local_only_done_without_pr_unaffected() {
+  reset_fakes
+  local d; d=$(new_case local-only-done)
+  make_repo_on_branch "$d/wt" fm/feat-local-only
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-local-only.meta" "window=fm:fm-feat-local-only" "worktree=$d/wt" "kind=ship" "mode=local-only" "harness=claude"
+  printf 'done: ready in branch fm/feat-local-only\n' > "$d/state/feat-local-only.status"
+  FM_FAKE_AXI_STATUS=""
+  FM_FAKE_RUNS_LIST=""
+  FM_FAKE_BUSY=0
+  arm_idle_record "$d/state" feat-local-only
+  local out; out=$(run_crew_state "$d" feat-local-only)
+  assert_contains "$out" "state: done" "local-only done: without a PR URL is accepted as-is"
+  pass "local-only done: without a PR URL is unaffected by the no-mistakes guard"
+}
+
+test_scout_done_without_pr_unaffected() {
+  reset_fakes
+  local d; d=$(new_case scout-done)
+  make_repo_on_branch "$d/wt" fm/scout1
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/scout1.meta" "window=fm:fm-scout1" "worktree=$d/wt" "kind=scout" "harness=claude"
+  printf 'done: report at data/scout1/report.md\n' > "$d/state/scout1.status"
+  FM_FAKE_AXI_STATUS=""
+  FM_FAKE_RUNS_LIST=""
+  FM_FAKE_BUSY=0
+  arm_idle_record "$d/state" scout1
+  local out; out=$(run_crew_state "$d" scout1)
+  assert_contains "$out" "state: done" "scout done: without a PR URL is accepted as-is"
+  pass "scout done: without a PR URL is unaffected by the no-mistakes guard"
+}
+
 # (g') no run + idle pane on a DECLARED external-wait pause -> state: paused, so a
 # supervisor reading the crew sees a distinct pause (and its reason) rather than a
 # wedge-suspect idle. This is the reader half the watcher/daemon build on.
@@ -1483,6 +1561,10 @@ test_no_run_herdr_idle_agent_status_outranked_by_record
 test_no_run_herdr_idle_agent_status_and_idle_record_stays_idle
 test_no_run_idle_pane_uses_log
 test_no_run_idle_pane_uses_keyed_log
+test_no_mistakes_done_without_pr_not_accepted
+test_no_mistakes_done_with_pr_still_accepted
+test_local_only_done_without_pr_unaffected
+test_scout_done_without_pr_unaffected
 test_no_run_idle_pane_paused
 test_no_run_idle_pane_custom_paused_verb
 test_no_run_idle_secondmate_resolved_event_not_state

@@ -144,6 +144,21 @@ status_is_paused_or_captain_held() {  # <status-line>
   [ "$verb" = "${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}" ]
 }
 
+# 0 if a status line's leading verb is done but the line names no PR URL.
+# no-mistakes' own definition of done (bin/fm-brief.sh, AGENTS.md section 7) is
+# `done: PR <url> checks green` - a done: line for a no-mistakes task that never
+# reached that shape means the pipeline was never run, or was started and
+# abandoned mid-gate. This is a pure text test with no mode awareness of its
+# own; the ONE place that combines it with a task's recorded mode
+# (state/<id>.meta's mode=) to decide whether a report is trustworthy is
+# fm-crew-state.sh, the authoritative current-state reader, so the verdict has
+# exactly one owner.
+status_done_missing_pr_url() {  # <status-line>
+  local line=$1
+  [ "$(status_line_verb "$line")" = "done" ] || return 1
+  ! printf '%s' "$line" | grep -qE 'https?://[^[:space:]]+'
+}
+
 # --- durable keyed decisions ------------------------------------------------
 #
 # The status stream is an append-only EVENT log. Reading it last-event-wins

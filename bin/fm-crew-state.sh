@@ -52,7 +52,9 @@
 #   4. No run for this crew (pre-validation, or kind=scout): fall back to the
 #      recorded backend's pane busy state, then the status log's last line only
 #      when its verb maps to a recognized run-state. Decision-only events such as
-#      `resolved` never become current state or detail.
+#      `resolved` never become current state or detail. A no-mistakes task's
+#      done: line without a PR URL is downgraded to working here instead of
+#      trusted as done, since reaching this branch means the pipeline never ran.
 #   5. Missing meta or torn-down worktree: report unknown · none. If no run is
 #      attributed to this crew, a dead endpoint also reports unknown · none rather
 #      than trusting a stale status log.
@@ -111,6 +113,7 @@ meta_value() {  # <key>
 WT=$(meta_value worktree)
 KIND=$(meta_value kind)
 HARNESS=$(meta_value harness)
+MODE=$(meta_value mode)
 [ -n "$KIND" ] || KIND=ship
 
 # A torn-down (or never-created) worktree has no current state to read.
@@ -604,8 +607,22 @@ fi
 # `unknown` with the resolution note as `doing`. map_log_state is the single owner of
 # the verb->state mapping (including the configurable paused verb), so reusing its
 # `unknown` verdict as the "not a state" test needs no second verb list here.
+#
+# A no-mistakes task reaches this fallback only when NO run was ever attributed
+# to it above (fm_nm_run/the runs-list fallback both came up empty) - i.e. the
+# pipeline was never started. no-mistakes' own definition of done is `done: PR
+# <url> checks green` (bin/fm-brief.sh, AGENTS.md section 7); a done: line here
+# that never reached that shape cannot be trusted as a finished no-mistakes
+# task, so it is reported as still working with the mismatch named, instead of
+# done, giving firstmate the grounds to send the crew back to actually run
+# validation. direct-PR, local-only, and scout tasks have no PR-URL requirement
+# in their own done contracts and are unaffected: this check fires only when
+# MODE is exactly no-mistakes.
 if [ -n "$LOG_VERB" ]; then
   LOG_STATE=$(map_log_state "$LOG_LINE")
+  if [ "$LOG_STATE" = "done" ] && [ "$MODE" = no-mistakes ] && status_done_missing_pr_url "$LOG_LINE"; then
+    emit working status-log "reported done without a PR URL for a no-mistakes task - no-mistakes was never run (AGENTS.md section 7 requires done: PR <url> checks green); send back to run validation"
+  fi
   if [ "$LOG_STATE" != unknown ]; then
     emit "$LOG_STATE" status-log "$(status_line_note "$LOG_LINE")"
   fi
