@@ -43,7 +43,9 @@
 #   socket, or unsupported secondmate mode) is terminal for that selected backend;
 #   callers must surface it instead of silently retrying another backend.
 #   A ship or scout spawn that runs treehouse get (every session-provider-only
-#   backend EXCEPT herdr and orca) first checks this task id's own
+#   backend, i.e. every case above except orca, herdr included - herdr's own
+#   husk-reclaim continuity only replaces the dead pane in place and leaves
+#   worktree choice to this same logic) first checks this task id's own
 #   state/<id>.meta for an already-recorded worktree=. A recorded worktree that
 #   still exists on disk, still resolves as a real isolated worktree, and is
 #   clean (`git status --porcelain`, ignoring only the untracked .claude/,
@@ -57,11 +59,7 @@
 #   anyway; this never touches or discards the old, dirty one. A recorded
 #   worktree that no longer exists, or no recorded worktree at all (including
 #   every brand new task id), falls through to an ordinary treehouse get with
-#   no override needed. herdr is excluded from reuse entirely and always runs
-#   an ordinary treehouse get: it owns its own separate, already-tested
-#   continuity mechanism for a same-task-id pane reclaim
-#   (fm_backend_herdr_create_task's husk-reclaim path), which expects a fresh
-#   treehouse worktree on every reclaim rather than a shared one.
+#   no override needed.
 #   --backend-port <port> and --frontend-port <port> are firstmate's explicit,
 #   pre-decided dev port pair for this exact task's worktree, resolved at intake
 #   the same way as --model/--effort/--backend rather than picked by this script
@@ -1959,20 +1957,15 @@ if [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   # recorded uncommitted work: it never deletes or touches the old worktree,
   # it only stops this spawn from reusing it. Silence must never mean "get a
   # new one" once uncommitted work is on record.
-  # herdr is deliberately excluded: it already owns a separate, tested
-  # continuity mechanism for the same task id getting a new pane in place of a
-  # dead one (fm_backend_herdr_create_task's husk-reclaim path, docs/herdr-backend.md
-  # "Known gaps" / "ID stability across a server restart"), which - unlike the
-  # crashed-worker incident this reuse targets - deliberately expects a fresh
-  # treehouse worktree on every reclaim (tests/fm-backend-herdr-presentation-e2e.test.sh,
-  # the fm-hibit-resume-r1 idempotent-reclaim case). Reusing the worktree there
-  # changes what fm-teardown.sh's herdr-presentation journal retirement sees and
-  # broke that exact regression test; excluding herdr here leaves its continuity
-  # story exactly as before.
+  # This applies to every session-provider backend, herdr included: herdr's
+  # own husk-reclaim continuity (fm_backend_herdr_create_task) only replaces
+  # the dead PANE in place - the worktree/cwd it is handed is still decided
+  # entirely here, so herdr gets no worktree-split protection at all unless
+  # this logic runs for it too.
   SPAWN_WT_SOURCE='treehouse get'
   SPAWN_WT_COMMAND='treehouse get'
   RECORDED_WT=$(fm_meta_get "$STATE/$ID.meta" worktree)
-  if [ "$BACKEND" != herdr ] && [ -n "$RECORDED_WT" ] && [ -d "$RECORDED_WT" ]; then
+  if [ -n "$RECORDED_WT" ] && [ -d "$RECORDED_WT" ]; then
     recorded_real=$(real_path_or_raw "$RECORDED_WT")
     recorded_top=$(git -C "$RECORDED_WT" rev-parse --show-toplevel 2>/dev/null || true)
     recorded_top_real=""
