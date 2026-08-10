@@ -132,6 +132,23 @@ rc=$?
   || fail "both ports empty must not write .ports.worktree"
 pass "fm_worktree_runtime_provision is a silent no-op when both ports are empty"
 
+# --- both ports empty on a RECYCLED worktree actively removes a stale
+# .ports.worktree instead of leaving it (2026-08-09: two recycled copies
+# inherited the same stale pair, gitignored so it survives worktree reuse) --
+
+WT_STALE="$TMP/ports-wt-stale"
+mkdir -p "$WT_STALE/code/web"
+{
+  printf 'BACKEND_PORT=8907\n'
+  printf 'FRONTEND_PORT=5408\n'
+} > "$WT_STALE/code/web/.ports.worktree"
+fm_worktree_runtime_provision "$WT_STALE" "$PORTS_PROJ" "" ""
+rc=$?
+[ "$rc" -eq 0 ] || fail "removing a stale .ports.worktree on a no-ports spawn must not fail (exit $rc)"
+[ ! -e "$WT_STALE/code/web/.ports.worktree" ] \
+  || fail "a stale .ports.worktree from a prior occupant must be actively removed, not left for a spawn with no port pair"
+pass "fm_worktree_runtime_provision removes a stale .ports.worktree from a recycled worktree when no port pair is given"
+
 # --- only one of the two ports given is refused -------------------------------
 
 WT_ONE="$TMP/ports-wt-one"

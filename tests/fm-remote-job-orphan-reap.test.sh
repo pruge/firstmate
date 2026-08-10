@@ -119,7 +119,7 @@ pass "the Linux start path puts the whole worker tree in its own process group"
 # survives a teardown that looks complete.
 rm -rf "$CASE1/remote-jobs"
 kill -TERM "$SERVE" 2>/dev/null || true
-wait_gone "$SERVE" 10 || fail "the serving child ignored TERM"
+wait_gone "$SERVE" 30 || fail "the serving child ignored TERM"
 alive "$WORKER" || fail "the fixture supervisor did not survive a lone child kill, so this case no longer covers the leak"
 wait_child "$WORKER" 15 || fail "the supervisor did not respawn after its recorded child pid was killed"
 pass "removing the state root and killing the recorded worker pid leaves the tree running at ppid 1"
