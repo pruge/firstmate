@@ -41,7 +41,11 @@
 #     code/web/.ports.worktree; a bad or already-bound pair is the one
 #     deliberate exception to best-effort here and makes this function return
 #     non-zero, which the caller must treat as a spawn failure. Both ports
-#     empty is a silent no-op (no ports contract for this spawn).
+#     empty means this spawn needs none (no contract, or an explicit
+#     firstmate --no-ports) and actively removes any code/web/.ports.worktree
+#     already present in the worktree instead of leaving it - see
+#     fm_worktree_runtime_write_ports; a removal failure is the same kind of
+#     deliberate exception and also fails the spawn.
 #
 # Data flows one way only: this always copies FROM the project's clone INTO
 # the worktree. Nothing here ever writes back into the project, so nothing a
@@ -172,16 +176,30 @@ fm_worktree_runtime_port_is_free() {  # <port>
 
 # Validate and write an explicit BACKEND_PORT/FRONTEND_PORT pair - chosen by
 # firstmate at intake, never by this library - to code/web/.ports.worktree.
-# Both empty is a silent no-op (no ports contract for this spawn). Any
-# validation failure (non-integer, non-positive, equal to each other, equal to
-# code/web/.ports.main's own pair, or already bound) prints a clear error and
-# returns non-zero; the caller must fail the spawn rather than fall back to
-# choosing a different pair.
+# Both empty means this exact spawn needs no port pair (no contract on the
+# project, or an explicit --no-ports); it actively REMOVES any
+# code/web/.ports.worktree already sitting in the worktree rather than leaving
+# it - a task worktree is recycled and .ports.worktree is gitignored, so a
+# stale file from a prior occupant would otherwise survive untouched and hand
+# the new occupant a port pair nobody chose for it (2026-08-09: two recycled
+# copies inherited the same stale 8907/5408 pair and nearly cross-connected).
+# A removal failure is treated exactly like a write failure: it prints a clear
+# error and fails the spawn rather than launching against a leftover value.
+# Any validation failure for a given pair (non-integer, non-positive, equal to
+# each other, equal to code/web/.ports.main's own pair, or already bound)
+# prints a clear error and returns non-zero; the caller must fail the spawn
+# rather than fall back to choosing a different pair.
 fm_worktree_runtime_write_ports() {  # <worktree-root> <project-root> <backend-port> <frontend-port>
   local wt=$1 proj=$2 backend_port=$3 frontend_port=$4
   local wt_web="$wt/$FM_WORKTREE_RUNTIME_WEB_REL" proj_web="$proj/$FM_WORKTREE_RUNTIME_WEB_REL"
 
   if [ -z "$backend_port" ] && [ -z "$frontend_port" ]; then
+    if [ -e "$wt_web/.ports.worktree" ]; then
+      rm -f "$wt_web/.ports.worktree" || {
+        echo "error: fm-spawn: failed to remove stale $wt_web/.ports.worktree for a spawn with no port pair" >&2
+        return 1
+      }
+    fi
     return 0
   fi
   if [ -z "$backend_port" ] || [ -z "$frontend_port" ]; then

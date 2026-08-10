@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Spawn a direct report: a crewmate in a treehouse or Orca worktree, or a
 # secondmate in its isolated firstmate home.
-# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--backend-port <port> --frontend-port <port>]
-#        fm-spawn.sh <task-id> <project-dir> --scout [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--backend-port <port> --frontend-port <port>]
+# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--backend-port <port> --frontend-port <port> | --no-ports]
+#        fm-spawn.sh <task-id> <project-dir> --scout [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--backend-port <port> --frontend-port <port> | --no-ports]
 #        fm-spawn.sh <task-id> [<firstmate-home>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --secondmate
 #   --mode and --yolo are this task's delivery contract, REQUIRED for every ship
 #   spawn and refused on --scout and --secondmate spawns. Firstmate resolves both
@@ -45,13 +45,30 @@
 #   --backend-port <port> and --frontend-port <port> are firstmate's explicit,
 #   pre-decided dev port pair for this exact task's worktree, resolved at intake
 #   the same way as --model/--effort/--backend rather than picked by this script
-#   or bin/fm-worktree-runtime-lib.sh. Both are optional together (a project with
-#   no ports contract passes neither); passing only one is refused. Ship and
-#   scout spawns only (never --secondmate, whose worktree is a firstmate home,
-#   not a project checkout): the given pair is validated and written to
-#   code/web/.ports.worktree, and a malformed value, a collision with
-#   code/web/.ports.main, or a port that is already bound fails the spawn
-#   outright rather than silently substituting a different pair.
+#   or bin/fm-worktree-runtime-lib.sh. Both are optional together; passing only
+#   one is refused. Ship and scout spawns only (never --secondmate, whose
+#   worktree is a firstmate home, not a project checkout): the given pair is
+#   validated and written to code/web/.ports.worktree, and a malformed value, a
+#   collision with code/web/.ports.main, or a port that is already bound fails
+#   the spawn outright rather than silently substituting a different pair.
+#   Neither given (a contract-less project, or --no-ports below) actively
+#   REMOVES any code/web/.ports.worktree already sitting in the worktree
+#   rather than leaving it: a task worktree is recycled and that file is
+#   gitignored, so a stale pair from a prior occupant would otherwise survive
+#   untouched and hand the new occupant a port nobody chose for it
+#   (bin/fm-worktree-runtime-lib.sh's fm_worktree_runtime_write_ports); a
+#   removal failure fails the spawn the same as a write failure.
+#   When the target project itself carries a port contract - its own
+#   code/web/.ports.main exists (bin/fm-worktree-runtime-lib.sh's
+#   FM_WORKTREE_RUNTIME_WEB_REL) - a ship or scout spawn REFUSES to launch with
+#   neither port flag given, naming the project and what to pass: silently
+#   skipping the pair would leave a live occupant with no line in the global
+#   port ledger. --no-ports is the explicit escape hatch for a task that
+#   deliberately never runs the dev servers (docs-only work, etc.); it is
+#   refused together with --backend-port/--frontend-port and refused on
+#   --secondmate spawns. A project with no port contract file is unaffected
+#   either way - passing neither flag there stays the same silent no-op it
+#   always was.
 #   A herdr crewmate or scout is placed in the exact workspace of the firstmate
 #   or secondmate process launching it, resolved from that process's own herdr
 #   pane rather than from a workspace label (herdr enforces no label uniqueness,
@@ -254,6 +271,7 @@ EFFORT=
 BACKEND_ARG=
 BACKEND_PORT_ARG=
 FRONTEND_PORT_ARG=
+NO_PORTS=0
 MODE=
 YOLO=
 TRACEPARENT_ARG=
@@ -303,6 +321,7 @@ for a in "$@"; do
     --backend-port=*) BACKEND_PORT_ARG=${a#--backend-port=}; BACKEND_PORT_SET=1 ;;
     --frontend-port) want_value="frontend-port" ;;
     --frontend-port=*) FRONTEND_PORT_ARG=${a#--frontend-port=}; FRONTEND_PORT_SET=1 ;;
+    --no-ports) NO_PORTS=1 ;;
     --mode) want_value=mode ;;
     --mode=*) MODE=${a#--mode=}; MODE_SET=1 ;;
     --yolo) want_value=yolo ;;
@@ -335,6 +354,16 @@ if [ "$BACKEND_PORT_SET" -eq 1 ] || [ "$FRONTEND_PORT_SET" -eq 1 ]; then
     [1-9] | [1-9][0-9]*) ;;
     *) echo "error: --frontend-port must be a positive integer, got '$FRONTEND_PORT_ARG'" >&2; exit 1 ;;
   esac
+fi
+if [ "$NO_PORTS" -eq 1 ]; then
+  if [ "$BACKEND_PORT_SET" -eq 1 ] || [ "$FRONTEND_PORT_SET" -eq 1 ]; then
+    echo "error: --no-ports cannot be combined with --backend-port/--frontend-port; pass the pair or say --no-ports, not both" >&2
+    exit 1
+  fi
+  [ "$KIND" != secondmate ] || {
+    echo "error: --no-ports applies only to ship/scout spawns; a --secondmate worktree is a firstmate home, never checked against a project's port contract" >&2
+    exit 1
+  }
 fi
 # A parent-delivered carrier replaces this home's own resolution, so it is
 # refused unless it is a secondmate spawn carrying a strictly valid W3C value.
@@ -808,6 +837,7 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
   # spanning several modes is two invocations rather than a silent mixed dispatch.
   [ "$MODE_SET" -eq 0 ] || shared_args+=(--mode "$MODE")
   [ "$YOLO_SET" -eq 0 ] || shared_args+=(--yolo "$YOLO")
+  [ "$NO_PORTS" -eq 0 ] || shared_args+=(--no-ports)
   for pair in "${POS[@]}"; do
     case "$pair" in
       *=*) : ;;
@@ -1377,6 +1407,30 @@ else
   WT=""
   BRIEF="$DATA/$ID/brief.md"
 fi
+
+# Port-contract guard (AGENTS.md task spawn-ports-bypass-guard): a project that
+# carries its own code/web/.ports.main (bin/fm-worktree-runtime-lib.sh's
+# FM_WORKTREE_RUNTIME_WEB_REL) expects fm_worktree_runtime_write_ports below to
+# bind this worktree's occupancy into the global port ledger. Launching such a
+# project with neither --backend-port nor --frontend-port used to pass
+# silently (both empty is a legitimate "no ports contract" no-op for every
+# OTHER project), which left a live worktree running with no ledger row at
+# all. Checked purely on the contract FILE's presence - never on project name
+# or path shape - so a project without this exact layout (firstmate's own
+# worktrees included) stays exactly the silent no-op it always was. Runs here,
+# right after PROJ_ABS resolves and before any worktree or backend
+# window/session is created, so a refusal never leaves a half-made copy or
+# pane behind. --secondmate spawns never reach this branch (KIND=secondmate
+# takes the other branch above) and --no-ports was already refused for them at
+# argument-parsing time.
+if [ "$KIND" != secondmate ] && [ "$NO_PORTS" -ne 1 ] && [ "$BACKEND_PORT_SET" -ne 1 ]; then
+  PORTS_CONTRACT_FILE="$PROJ_ABS/$FM_WORKTREE_RUNTIME_WEB_REL/.ports.main"
+  if [ -f "$PORTS_CONTRACT_FILE" ]; then
+    echo "error: $(basename "$PROJ_ABS") has a port contract ($PORTS_CONTRACT_FILE) but this spawn passed neither --backend-port nor --frontend-port; resolve a pair at intake exactly like --model/--effort, or pass --no-ports if this exact task deliberately never runs the dev servers" >&2
+    exit 1
+  fi
+fi
+
 [ -f "$BRIEF" ] || { echo "error: no brief at $BRIEF" >&2; exit 1; }
 
 delivery_rigor_rank() {  # <mode> -> 3 (most rigor) .. 1 (least); 0 = not a task mode
