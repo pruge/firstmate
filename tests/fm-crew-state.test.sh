@@ -1124,6 +1124,22 @@ test_local_only_done_without_pr_unaffected() {
   pass "local-only done: without a PR URL is unaffected by the no-mistakes guard"
 }
 
+test_direct_pr_done_without_pr_unaffected() {
+  reset_fakes
+  local d; d=$(new_case direct-pr-done)
+  make_repo_on_branch "$d/wt" fm/feat-direct-pr
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-direct-pr.meta" "window=fm:fm-feat-direct-pr" "worktree=$d/wt" "kind=ship" "mode=direct-PR" "harness=claude"
+  printf 'done: PR https://github.com/o/r/pull/5\n' > "$d/state/feat-direct-pr.status"
+  FM_FAKE_AXI_STATUS=""
+  FM_FAKE_RUNS_LIST=""
+  FM_FAKE_BUSY=0
+  arm_idle_record "$d/state" feat-direct-pr
+  local out; out=$(run_crew_state "$d" feat-direct-pr)
+  assert_contains "$out" "state: done" "direct-PR done: with its own PR URL is accepted as-is"
+  pass "direct-PR done: is unaffected by the no-mistakes-only guard"
+}
+
 test_scout_done_without_pr_unaffected() {
   reset_fakes
   local d; d=$(new_case scout-done)
@@ -1564,6 +1580,7 @@ test_no_run_idle_pane_uses_keyed_log
 test_no_mistakes_done_without_pr_not_accepted
 test_no_mistakes_done_with_pr_still_accepted
 test_local_only_done_without_pr_unaffected
+test_direct_pr_done_without_pr_unaffected
 test_scout_done_without_pr_unaffected
 test_no_run_idle_pane_paused
 test_no_run_idle_pane_custom_paused_verb
