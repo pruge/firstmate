@@ -968,8 +968,12 @@ test_status_protocol_covers_captain_check_and_captain_direct_work() {
   # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
   assert_grep '`paused: captain working directly` once' "$brief" \
     "ship brief must instruct a single pause line when the captain takes over the pane"
-  assert_grep "then go quiet on status until firstmate tells" "$brief" \
+  assert_grep "then go quiet on status until the captain" "$brief" \
     "ship brief must require going quiet on status while the captain works directly"
+  assert_grep "says they are done" "$brief" \
+    "ship brief must key the release on the captain's own word, not a firstmate relay"
+  assert_grep "not a relay from firstmate - firstmate" "$brief" \
+    "ship brief must explain why the release condition is the captain's word and not firstmate's"
   assert_grep "send one batched report covering everything that happened while" "$brief" \
     "ship brief must require one batched report after captain-direct work ends"
   assert_grep "is still reported immediately, never batched" "$brief" \
@@ -985,6 +989,10 @@ test_status_protocol_covers_captain_check_and_captain_direct_work() {
   # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
   assert_grep '`paused: captain working directly` once' "$brief" \
     "scout brief must also instruct a single pause line when the captain takes over the pane"
+  assert_grep "then go quiet on status until the captain" "$brief" \
+    "scout brief must also key the release on the captain's own word, not a firstmate relay"
+  assert_grep "says they are done" "$brief" \
+    "scout brief must also key the release on the captain's own word, not a firstmate relay"
   assert_grep "is still reported immediately, never batched" "$brief" \
     "scout brief must also carve out immediate reporting for destructive/irreversible/security-sensitive findings"
 
@@ -1018,9 +1026,132 @@ test_worktree_isolation_rule_covers_processes_in_ship_and_scout() {
       "$kind brief must name the port-scoped replacement, not just forbid the bad command"
     assert_grep "refuses any whose listener lives outside this worktree" "$brief" \
       "$kind brief must say the replacement refuses another tree's port, which is why it is safe"
+    assert_grep "This is a general boundary, not a fixed list of resources to watch for" "$brief" \
+      "$kind brief must generalize the isolation boundary instead of only enumerating ports and processes"
+    assert_grep "stop and report it instead of running it" "$brief" \
+      "$kind brief must require stopping and reporting a command that touches something outside the worktree"
+    assert_grep "The boundary covers a command that reaches outside indirectly too" "$brief" \
+      "$kind brief must cover bulk actions (e.g. sweeping a whole test suite) that reach outside indirectly, not just commands naming the outside resource directly"
+    assert_grep "sweeping in a whole test suite when part of it is an e2e run against a live shared server" "$brief" \
+      "$kind brief must give the test-suite-sweep case as an example of an indirect boundary crossing"
   done
 
   pass "fm-brief: worktree isolation covers processes and names the port-scoped killer in both scaffolds"
+}
+
+# The generalized isolation boundary must not turn into an enumerated resource list,
+# since the next resource nobody thought to name would just be missing again the same way
+# ports and processes once were. Pin the general form and that it names representative
+# examples ("such as") rather than presenting a closed set.
+test_isolation_boundary_is_general_not_enumerated() {
+  local home id brief
+  home="$TMP_ROOT/isolation-general-home"
+  mkdir -p "$home/data"
+  id="brief-isolation-general"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "ship brief was not scaffolded"
+  assert_grep "or anything else you did not start yourself in this worktree" "$brief" \
+    "isolation boundary must end its examples with an open-ended catch-all, not a closed list"
+  pass "fm-brief: the generalized isolation boundary stays open-ended rather than enumerating resources"
+}
+
+# --captain-check is the generator-owned replacement for firstmate hand-writing a
+# captain-verification paragraph before every no-mistakes run: it must produce the full
+# gate (stop after commit, stand up the environment, numbered verification steps, pause
+# on the existing declared-external-wait verb rather than done, and report-then-wait
+# instead of self-driving into the next gate), and it must refuse everywhere it does not
+# apply (scout, secondmate) so a mistaken flag cannot be silently dropped.
+test_captain_check_flag_generates_full_gate_and_is_refused_elsewhere() {
+  local home id brief status
+  home="$TMP_ROOT/captain-check-flag-home"
+  mkdir -p "$home/data"
+
+  id="brief-captain-check-nomistakes"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes --captain-check >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "captain-check ship brief was not scaffolded"
+  assert_grep "# Captain verification" "$brief" \
+    "captain-check brief must carry its own generated section"
+  assert_grep "does not start automatically after your implementation commit" "$brief" \
+    "captain-check section must explicitly override the Definition of done's normal auto-start"
+  assert_grep 'including any instruction in it to start validation, push, or open a PR "right away"' "$brief" \
+    "captain-check section must name the conflicting right-away instruction it overrides, since the no-mistakes DOD's own start-right-away line reads right below it"
+  assert_grep "do not start the full validation pipeline yet" "$brief" \
+    "captain-check section must limit the pre-pause check to one local green run, not the full pipeline"
+  assert_grep "Stand up the environment the captain will look at" "$brief" \
+    "captain-check section must require standing up the review environment"
+  assert_grep "start any server the change needs" "$brief" \
+    "captain-check section must require starting any server the captain will need"
+  assert_grep "create the accounts or seed data the walkthrough needs" "$brief" \
+    "captain-check section must require preparing accounts/data ahead of the walkthrough"
+  assert_grep "Write numbered verification steps" "$brief" \
+    "captain-check section must require numbered verification steps"
+  assert_grep "also say what it looks like when it is wrong" "$brief" \
+    "captain-check section must ask for the wrong-looking case, not just the right one"
+  # shellcheck disable=SC2016 # Literal backticks and braces must remain unexpanded.
+  assert_grep 'Append `paused: awaiting captain confirmation - {what}` and stop' "$brief" \
+    "captain-check section must pause on the existing declared-external-wait verb, never done"
+  assert_grep "Do not run /no-mistakes, push, or open a PR yet" "$brief" \
+    "captain-check section must forbid starting the mode-specific pipeline before the pause clears"
+  assert_grep "do not jump straight into the Definition of done on your own" "$brief" \
+    "captain-check section must forbid self-driving into the next gate on captain confirmation"
+  assert_grep "wait for firstmate's go-ahead before you proceed" "$brief" \
+    "captain-check section must require reporting to firstmate and waiting, not just reporting"
+
+  for mode in direct-PR local-only; do
+    id="brief-captain-check-$mode"
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode "$mode" --captain-check >/dev/null 2>&1
+    brief="$home/data/$id/brief.md"
+    assert_present "$brief" "captain-check $mode brief was not scaffolded"
+    assert_grep "# Captain verification" "$brief" \
+      "captain-check $mode brief must also carry the generated section"
+  done
+
+  id="brief-no-captain-check"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_no_grep "# Captain verification" "$brief" \
+    "a ship brief scaffolded without --captain-check must not carry the section"
+
+  status=0
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-captain-check-scout some-proj --scout --captain-check >/dev/null 2>&1 || status=$?
+  expect_code 1 "$status" "--captain-check on a scout brief must be refused"
+  assert_absent "$home/data/brief-captain-check-scout/brief.md" \
+    "refused --captain-check scout brief must not write a file"
+
+  status=0
+  FM_HOME="$home" FM_SECONDMATE_CHARTER=x \
+    "$ROOT/bin/fm-brief.sh" brief-captain-check-sm --secondmate --no-projects --captain-check >/dev/null 2>&1 || status=$?
+  expect_code 1 "$status" "--captain-check on a secondmate charter must be refused"
+  assert_absent "$home/data/brief-captain-check-sm/brief.md" \
+    "refused --captain-check secondmate brief must not write a file"
+
+  pass "fm-brief: --captain-check generates the full gate for every ship mode and is refused on scout/secondmate"
+}
+
+# The ticket-claim commit used to be a sub-sentence of the branch-creation step, and two
+# separate crews both skipped it (2026-08-11) after creating the branch and moving straight
+# on. It must render as its own numbered step so a worker cannot treat it as an aside.
+test_ticket_claim_is_its_own_numbered_setup_step() {
+  local home id brief
+  home="$TMP_ROOT/ticket-claim-step-home"
+  mkdir -p "$home/data"
+  id="brief-ticket-claim-step"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "ship brief was not scaffolded"
+  if ! grep -qE '^1\. First action: create your branch' "$brief"; then
+    fail "ship brief must open its numbered setup with the branch-creation step as step 1"
+  fi
+  if ! grep -qE '^2\. If the task names one or more tracked tickets' "$brief"; then
+    fail "ship brief must render the ticket-claim commit as its own numbered step 2, not a sub-sentence of step 1"
+  fi
+  # shellcheck disable=SC2016 # Literal backticks must remain unexpanded in the grep pattern.
+  if ! grep -qE '^3\. Run `no-mistakes doctor`' "$brief"; then
+    fail "no-mistakes ship brief must renumber its doctor-check step to 3 after the ticket-claim step"
+  fi
+  pass "fm-brief: the ticket-claim commit renders as its own numbered setup step"
 }
 
 test_codegraph_setup_block_present_in_scout_and_ship() {
@@ -1102,3 +1233,6 @@ test_no_mistakes_dod_bounds_the_foreground_poll_interval
 test_ship_dod_requires_browser_verification_with_precondition
 test_status_protocol_covers_captain_check_and_captain_direct_work
 test_worktree_isolation_rule_covers_processes_in_ship_and_scout
+test_isolation_boundary_is_general_not_enumerated
+test_captain_check_flag_generates_full_gate_and_is_refused_elsewhere
+test_ticket_claim_is_its_own_numbered_setup_step

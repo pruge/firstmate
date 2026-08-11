@@ -6,11 +6,18 @@
 # description, acceptance criteria, and context, and may adjust other sections
 # when the task genuinely deviates (e.g. working an existing external PR instead
 # of shipping a new one).
-# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--herdr-lab]
+# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--herdr-lab] [--captain-check]
 #        fm-brief.sh <task-id> <repo-name> --scout [--herdr-lab]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
 #   --scout writes the scout contract instead: the deliverable is a report at
 #   data/<task-id>/report.md (no branch, no push, no PR) and the worktree is scratch.
+#   --captain-check applies only to ship briefs. It inserts a generated Captain
+#   verification section that stops the worker after the implementation commit and one
+#   green local check, has it stand up the environment and write numbered verification
+#   steps for the captain, pauses on the existing declared-external-wait convention
+#   instead of "done", and on confirmation reports to firstmate and waits rather than
+#   driving itself into the next gate. Use it whenever the task needs the captain to look
+#   at something before the Definition of done's mode-specific pipeline, push, or PR runs.
 #   --secondmate writes a persistent secondmate charter. The project list
 #   is cloned into the secondmate home, while the natural-language scope
 #   tells the main firstmate when to route work there; routine churn stays in its own home;
@@ -139,6 +146,7 @@ fi
 KIND=ship
 HERDR_LAB=0
 NO_PROJECTS=0
+CAPTAIN_CHECK=0
 MODE=
 MODE_SET=0
 POS=()
@@ -160,6 +168,7 @@ for a in "$@"; do
     --secondmate) KIND=secondmate ;;
     --herdr-lab) HERDR_LAB=1 ;;
     --no-projects) NO_PROJECTS=1 ;;
+    --captain-check) CAPTAIN_CHECK=1 ;;
     --mode) want_value=mode ;;
     --mode=*) MODE=${a#--mode=}; MODE_SET=1 ;;
     # yolo never reaches the worker: it is firstmate's approval authority, not a
@@ -198,6 +207,11 @@ fi
 
 if [ "$NO_PROJECTS" -eq 1 ] && [ "$KIND" != secondmate ]; then
   echo "error: --no-projects applies only to --secondmate charters" >&2
+  exit 1
+fi
+
+if [ "$CAPTAIN_CHECK" -eq 1 ] && [ "$KIND" != ship ]; then
+  echo "error: --captain-check applies only to ship briefs; a scout delivers a report and a secondmate charter is not a delivery contract" >&2
   exit 1
 fi
 
@@ -379,6 +393,8 @@ IFS= read -r -d '' PROCESS_ISOLATION_RULE <<EOF || true
 Isolation covers PROCESSES too, not just files: sibling worktrees and the captain's own checkout run live servers on this same machine, and a name pattern cannot tell theirs from yours.
    So never kill by pattern (\`pkill -f\`, \`killall\`, or \`pgrep\` piped into kill) - free a port with \`$FM_ROOT/bin/fm-kill-port.sh <port> [<port> ...]\` instead, which accepts several ports and refuses any whose listener lives outside this worktree.
    Beyond ports, terminate only a pid you started yourself and can name.
+   This is a general boundary, not a fixed list of resources to watch for: before any command that would kill, restart, or actually start up something that lives outside your own copy - a shared login session, a shared browser profile, a live fleet server, or anything else you did not start yourself in this worktree - stop and report it instead of running it.
+   The boundary covers a command that reaches outside indirectly too, not only one that names the outside resource directly: sweeping in a whole test suite when part of it is an e2e run against a live shared server crosses the same line as naming that server yourself, so choose deliberately what you run and say why instead of defaulting to everything.
 EOF
 PROCESS_ISOLATION_RULE=${PROCESS_ISOLATION_RULE%$'\n'}
 
@@ -420,10 +436,12 @@ $CODEGRAPH_SECTION
      actively driving a pipeline or gate that can still surface a decision you must answer - use
      \`working:\` for that instead, never \`$PAUSED_VERB\`.
    - Firstmate tells you the captain is now working directly in your pane: append exactly
-     \`$PAUSED_VERB: captain working directly\` once, then go quiet on status until firstmate tells
-     you the captain is done, then send one batched report covering everything that happened while
-     quiet. A destructive, irreversible, or security-sensitive finding, or anything only firstmate
-     can authorize (a merge, a credential), is still reported immediately, never batched.
+     \`$PAUSED_VERB: captain working directly\` once, then go quiet on status until the captain
+     says they are done, then send one batched report covering everything that happened while
+     quiet. The release condition is the captain's own word, not a relay from firstmate - firstmate
+     is not watching this pane while the captain drives it. A destructive, irreversible, or
+     security-sensitive finding, or anything only firstmate can authorize (a merge, a credential),
+     is still reported immediately, never batched.
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
 6. If a decision belongs to a human (product choices, destructive actions),
    append \`needs-decision [key=<slug>]: {summary of options}\` and stop. Firstmate will reply with the decision.
@@ -443,6 +461,38 @@ If your findings reveal work that should ship (e.g. you reproduced a bug and the
 EOF
 echo "scaffolded: $BRIEF (scout; replace {TASK})"
 exit 0
+fi
+
+# --captain-check inserts a gate the generator owns instead of firstmate hand-writing
+# a paragraph before /no-mistakes on every task that needs the captain's eyes. It stops
+# the worker after the implementation commit and a single green local check - never the
+# full pipeline - has the worker stand the environment up for the captain to look at,
+# has it write numbered verification steps (what to click, what should appear, and where
+# practical what wrong looks like, since that is how the captain actually judges it), and
+# then pauses on the existing $PAUSED_VERB convention rather than "done" so the status
+# classifier never reads a still-open task as finished. The final step exists because a
+# worker that hears the captain say the check passed must not silently drive itself into
+# the next gate: it reports the confirmation and waits for firstmate, which owns telling
+# the captain and deciding when the next gate starts.
+# Unlike every other section variable in this script, CAPTAIN_CHECK_SECTION keeps its
+# leading and trailing heredoc newlines instead of being stripped with `${VAR%$'\n'}`:
+# it is spliced onto its own template line right before $DOD below with no literal blank
+# line around it, so its own newlines are what produce the blank-line spacing on both
+# sides when non-empty, and collapse to the single blank line already there when empty
+# (an empty $CAPTAIN_CHECK_SECTION still leaves the template line's own trailing newline).
+if [ "$CAPTAIN_CHECK" -eq 1 ]; then
+IFS= read -r -d '' CAPTAIN_CHECK_SECTION <<EOF || true
+
+# Captain verification
+This task needs the captain to look at something before it ships, so the Definition of done below does not start automatically after your implementation commit - including any instruction in it to start validation, push, or open a PR "right away": that only applies once step 5 below tells you firstmate has given the go-ahead.
+1. Implement, write tests, and commit as usual. Run your own test suite once to confirm it is green; do not start the full validation pipeline yet.
+2. Stand up the environment the captain will look at: start any server the change needs, create the accounts or seed data the walkthrough needs, and make sure the app being reviewed actually points at that server.
+3. Write numbered verification steps: which screen, which account, what to click or enter, and exactly what should appear when it is right. Where practical, also say what it looks like when it is wrong - that is how the captain actually judges it.
+4. Append \`$PAUSED_VERB: awaiting captain confirmation - {what}\` and stop. Do not run /no-mistakes, push, or open a PR yet.
+5. When the captain confirms - whether relayed by firstmate or seen directly in your own pane - do not jump straight into the Definition of done on your own. Append a status line reporting the confirmation and wait for firstmate's go-ahead before you proceed; firstmate owns telling the captain and deciding when the next gate starts.
+EOF
+else
+  CAPTAIN_CHECK_SECTION=""
 fi
 
 # Ship task: shape Setup / Rule 1 / Definition of done by this task's explicit
@@ -477,7 +527,7 @@ EOF
     ;;
   *)  # no-mistakes
     SETUP2="
-2. Run \`no-mistakes doctor\`; if it reports the repo is not initialized here, run \`no-mistakes init\`."
+3. Run \`no-mistakes doctor\`; if it reports the repo is not initialized here, run \`no-mistakes init\`."
     RULE1='1. Never push to the default branch. Never merge a PR.'
     IFS= read -r -d '' DOD <<EOF || true
 # Definition of done
@@ -529,7 +579,7 @@ The path check is authoritative: \`git rev-parse --git-dir\` and \`git rev-parse
 If the top-level path is the primary checkout or not the worktree you were launched in, STOP - do not branch or commit here - append \`blocked: launched in primary checkout, not an isolated worktree\` to the status file and stop.
 
 1. First action: create your branch: \`git checkout -b fm/$ID\`.
-   If the task names one or more tracked tickets, immediately make a commit containing only each named ticket's \`Status:\` line flipped to \`claimed\` - this marks the start, distinct from the implementation commit that later flips the same line to \`resolved (YYYY-MM-DD)\` at the end.
+2. If the task names one or more tracked tickets, immediately make a commit containing only each named ticket's \`Status:\` line flipped to \`claimed\` - this marks the start, distinct from the implementation commit that later flips the same line to \`resolved (YYYY-MM-DD)\` at the end.
    Skip this entirely when the task names no ticket; never go looking for one.$SETUP2
 
 $CODEGRAPH_SECTION
@@ -559,10 +609,12 @@ $RULE1
      no-mistakes run is active and can still surface a gate you must answer - use \`working:\` for
      that instead, never \`$PAUSED_VERB\`.
    - Firstmate tells you the captain is now working directly in your pane: append exactly
-     \`$PAUSED_VERB: captain working directly\` once, then go quiet on status until firstmate tells
-     you the captain is done, then send one batched report covering everything that happened while
-     quiet. A destructive, irreversible, or security-sensitive finding, or anything only firstmate
-     can authorize (a merge, a credential), is still reported immediately, never batched.
+     \`$PAUSED_VERB: captain working directly\` once, then go quiet on status until the captain
+     says they are done, then send one batched report covering everything that happened while
+     quiet. The release condition is the captain's own word, not a relay from firstmate - firstmate
+     is not watching this pane while the captain drives it. A destructive, irreversible, or
+     security-sensitive finding, or anything only firstmate can authorize (a merge, a credential),
+     is still reported immediately, never batched.
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
 6. If a decision belongs above the implementation worker (product choices, destructive actions, ask-user findings),
    append \`needs-decision [key=<slug>]: {summary of options}\` and stop. Firstmate will apply the configured authority and reply with the decision.
@@ -579,7 +631,7 @@ Record only project knowledge useful to almost every future session.
 For anything the codebase already shows, prefer a pointer to the authoritative file, command, or doc over copying the detail.
 If you touch a project \`AGENTS.md\` that lacks \`## Maintaining this file\`, add that short self-governance section from \`$FM_ROOT/bin/fm-ensure-agents-md.sh\` in the same pass.
 Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced no durable project knowledge.
-
+$CAPTAIN_CHECK_SECTION
 $DOD
 EOF
 echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {TASK})"
