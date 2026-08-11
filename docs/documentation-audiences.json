@@ -161,6 +161,10 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/next/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/planner-to-spec/SKILL.md",
       "audience": "agent-runtime"
     },
