@@ -991,6 +991,38 @@ test_status_protocol_covers_captain_check_and_captain_direct_work() {
   pass "fm-brief: status protocol covers a captain-confirmation wait and captain-direct-work batching in both ship and scout scaffolds"
 }
 
+# A crewmate freeing its dev port with `pkill -f 'wrangler dev'` killed the captain's
+# server in another checkout: the file-scoped isolation rule never said that processes
+# are shared too. Both scaffolds must forbid pattern kills and name the port-scoped
+# replacement, or the next crewmate reaches for the same command.
+test_worktree_isolation_rule_covers_processes_in_ship_and_scout() {
+  local home id brief kind
+  home="$TMP_ROOT/process-isolation-home"
+  mkdir -p "$home/data"
+
+  for kind in ship scout; do
+    id="brief-process-isolation-$kind"
+    if [ "$kind" = ship ]; then
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode direct-PR >/dev/null 2>&1
+    else
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --scout >/dev/null 2>&1
+    fi
+    brief="$home/data/$id/brief.md"
+    assert_present "$brief" "$kind brief was not scaffolded"
+    assert_grep "Isolation covers PROCESSES too" "$brief" \
+      "$kind brief must say isolation covers processes, not only files"
+    # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
+    assert_grep 'never kill by pattern (`pkill -f`' "$brief" \
+      "$kind brief must forbid the pattern kill that caused the incident"
+    assert_grep "bin/fm-kill-port.sh <port>" "$brief" \
+      "$kind brief must name the port-scoped replacement, not just forbid the bad command"
+    assert_grep "refuses any whose listener lives outside this worktree" "$brief" \
+      "$kind brief must say the replacement refuses another tree's port, which is why it is safe"
+  done
+
+  pass "fm-brief: worktree isolation covers processes and names the port-scoped killer in both scaffolds"
+}
+
 test_codegraph_setup_block_present_in_scout_and_ship() {
   local brief
 
@@ -1069,3 +1101,4 @@ test_no_mistakes_dod_splits_gate_wait_into_three_branches
 test_no_mistakes_dod_bounds_the_foreground_poll_interval
 test_ship_dod_requires_browser_verification_with_precondition
 test_status_protocol_covers_captain_check_and_captain_direct_work
+test_worktree_isolation_rule_covers_processes_in_ship_and_scout
