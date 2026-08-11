@@ -42,6 +42,21 @@
 #   A backend spawn refusal (missing dependency, version gate, unauthenticated
 #   socket, or unsupported secondmate mode) is terminal for that selected backend;
 #   callers must surface it instead of silently retrying another backend.
+#   A ship or scout spawn that runs treehouse get (every session-provider-only
+#   backend, i.e. every case above except orca) first checks this task id's own
+#   state/<id>.meta for an already-recorded worktree=. If that worktree still
+#   exists on disk, still resolves as a real isolated worktree, and holds
+#   uncommitted work (`git status --porcelain`, ignoring only the untracked
+#   .claude/, .codegraph/, and turn-end-pointer artifacts this script itself
+#   writes), the spawn REFUSES: treehouse get would hand this task a brand-new
+#   pool slot and leave that work behind in a copy nothing points at. The
+#   refusal names the worktree so firstmate can inspect it and decide by hand;
+#   this never reuses, reclaims, or modifies that worktree, and never resumes
+#   work in place. A clean recorded worktree, a recorded worktree that no
+#   longer exists, and no recorded worktree at all (including every brand new
+#   task id) all run an ordinary treehouse get exactly as before, with no
+#   override needed. Set FM_SPAWN_ALLOW_NEW_WORKTREE=1 to lift the refusal and
+#   acquire a fresh worktree anyway; the old, dirty one is left untouched.
 #   --backend-port <port> and --frontend-port <port> are firstmate's explicit,
 #   pre-decided dev port pair for this exact task's worktree, resolved at intake
 #   the same way as --model/--effort/--backend rather than picked by this script
@@ -1923,6 +1938,52 @@ kimi_spawn_fail() {  # <detail>
 }
 
 if [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
+  # Before acquiring a worktree, refuse rather than walk away from uncommitted
+  # work this task already has on record. `treehouse get` always hands back a
+  # brand-new pool slot, so a relaunch under an id whose state/<id>.meta still
+  # names a worktree holding uncommitted changes would leave that work in a
+  # copy nobody is pointed at anymore - the 2026-08-09 incident, where a dead
+  # worker's relaunch stranded 11 uncommitted files (hard rule 3, and the
+  # split stuck-crewmate-recovery warns about). Stopping is the whole
+  # protection: firstmate sees the refusal, inspects the recorded worktree,
+  # and decides what to do with the work by hand. This deliberately does NOT
+  # reuse the recorded worktree - continuing in place is a convenience, not a
+  # safety property, and it is the backends' own relaunch machinery (herdr's
+  # husk reclaim, treehouse's pool accounting) that owns which copy a pane
+  # lands in.
+  #
+  # RECORDED_WT comes only from this task's own meta (never a shared namespace
+  # scan, matching AGENTS.md section 5), and is only trusted as evidence after
+  # it verifies as a real, currently-registered, isolated worktree distinct
+  # from the primary checkout. A clean recorded worktree, a recorded worktree
+  # that no longer exists, and no recorded worktree at all (including every
+  # brand new task id) all fall through to an ordinary `treehouse get`, silent
+  # and unchanged. FM_SPAWN_ALLOW_NEW_WORKTREE=1 is the explicit, caller-set
+  # escape hatch for the rare case a fresh worktree really is correct despite
+  # recorded uncommitted work: it only lifts this refusal, and never deletes
+  # or touches the old worktree. Silence must never mean "get a new one" once
+  # uncommitted work is on record.
+  RECORDED_WT=$(fm_meta_get "$STATE/$ID.meta" worktree)
+  if [ "${FM_SPAWN_ALLOW_NEW_WORKTREE:-}" != 1 ] && [ -n "$RECORDED_WT" ] && [ -d "$RECORDED_WT" ]; then
+    recorded_real=$(real_path_or_raw "$RECORDED_WT")
+    recorded_top=$(git -C "$RECORDED_WT" rev-parse --show-toplevel 2>/dev/null || true)
+    recorded_top_real=""
+    [ -z "$recorded_top" ] || recorded_top_real=$(real_path_or_raw "$recorded_top")
+    if [ -n "$recorded_real" ] && [ "$recorded_real" = "$recorded_top_real" ] && [ "$recorded_real" != "$PROJ_ABS_REAL" ]; then
+      if ! recorded_dirty_raw=$(git -C "$RECORDED_WT" status --porcelain 2>/dev/null); then
+        echo "error: cannot inspect task $ID's recorded worktree $RECORDED_WT for uncommitted work; refusing to acquire a new worktree while that work is unaccounted for. Inspect it, then set FM_SPAWN_ALLOW_NEW_WORKTREE=1 to acquire a fresh worktree anyway (the old one is left untouched)." >&2
+        exit 1
+      fi
+      # Only untracked machine-local artifacts spawn itself writes are exempt
+      # (mirrors fm-teardown.sh's validate_worktree_teardown_safety); anything
+      # else, tracked or untracked, is the agent's own unlanded work.
+      recorded_dirty=$(printf '%s\n' "$recorded_dirty_raw" | grep -vE '^\?\? (\.claude/|\.codegraph/|\.fm-(grok|kimi)-turnend$)' | head -1 || true)
+      if [ -n "$recorded_dirty" ]; then
+        echo "error: task $ID has uncommitted work in its recorded worktree $RECORDED_WT; refusing to acquire a new worktree, which would leave that work behind in a copy nothing points at. Land or discard it there first, or set FM_SPAWN_ALLOW_NEW_WORKTREE=1 to acquire a fresh worktree anyway and leave the old one in place." >&2
+        exit 1
+      fi
+    fi
+  fi
   spawn_send_text_line "$WT_TARGET" 'treehouse get'
 
   # Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
