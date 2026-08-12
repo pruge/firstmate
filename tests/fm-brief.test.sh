@@ -1077,8 +1077,22 @@ test_captain_check_flag_generates_full_gate_and_is_refused_elsewhere() {
     "captain-check section must explicitly override the Definition of done's normal auto-start"
   assert_grep 'including any instruction in it to start validation, push, or open a PR "right away"' "$brief" \
     "captain-check section must name the conflicting right-away instruction it overrides, since the no-mistakes DOD's own start-right-away line reads right below it"
-  assert_grep "do not start the full validation pipeline yet" "$brief" \
-    "captain-check section must limit the pre-pause check to one local green run, not the full pipeline"
+  assert_grep "do not start the full validation pipeline" "$brief" \
+    "captain-check section must keep the mode-specific validation pipeline out of the pre-pause stage"
+  # The captain reported this duplication twice (2026-08-12): the worker ran the project's
+  # full check before the pause, the captain then asked for changes, and it ran again after
+  # the go-ahead on code nothing had touched. The single run belongs after the captain is
+  # finished, which is the only point at which the code under test stops moving.
+  assert_grep "Do NOT run the project's full check yet" "$brief" \
+    "captain-check section must hold the full check until after the captain is finished, since a pre-pause run is one the captain's own change requests would only make it repeat"
+  assert_grep "Do NOT run the full check between changes" "$brief" \
+    "captain-check section must forbid a full run per requested change while the captain is still looking"
+  assert_grep "run the project's full check ONCE, now, on exactly that code" "$brief" \
+    "captain-check section must place the single full run right after the captain says they are finished"
+  assert_grep "Append one status line carrying BOTH the captain's confirmation AND that run's result" "$brief" \
+    "captain-check section must report the check result together with the confirmation, so firstmate can decide without asking for it"
+  assert_grep "will not ask you to run it again" "$brief" \
+    "captain-check section must state that firstmate decides on the reported result rather than ordering a re-run"
   assert_grep "Stand up the environment the captain will look at" "$brief" \
     "captain-check section must require standing up the review environment"
   # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
@@ -1113,9 +1127,9 @@ test_captain_check_flag_generates_full_gate_and_is_refused_elsewhere() {
     "captain-check section must pause on the existing declared-external-wait verb, never done"
   assert_grep "Do not run /no-mistakes, push, or open a PR yet" "$brief" \
     "captain-check section must forbid starting the mode-specific pipeline before the pause clears"
-  assert_grep "Leave whatever you stood up for this check running - do not tear it down until step 8" "$brief" \
+  assert_grep "Leave whatever you stood up for this check running - do not tear it down until step 9" "$brief" \
     "captain-check section must forbid tearing down the review environment while captain confirmation is pending"
-  assert_grep "do not jump straight into the Definition of done on your own" "$brief" \
+  assert_grep "jump straight into the Definition of done on your own" "$brief" \
     "captain-check section must forbid self-driving into the next gate on captain confirmation"
   assert_grep "wait for firstmate's go-ahead before you proceed" "$brief" \
     "captain-check section must require reporting to firstmate and waiting, not just reporting"

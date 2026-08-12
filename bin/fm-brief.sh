@@ -12,12 +12,16 @@
 #   --scout writes the scout contract instead: the deliverable is a report at
 #   data/<task-id>/report.md (no branch, no push, no PR) and the worktree is scratch.
 #   --captain-check applies only to ship briefs. It inserts a generated Captain
-#   verification section that stops the worker after the implementation commit and one
-#   green local check, has it stand up the environment and write numbered verification
-#   steps for the captain, pauses on the existing declared-external-wait convention
-#   instead of "done", and on confirmation reports to firstmate and waits rather than
-#   driving itself into the next gate. Use it whenever the task needs the captain to look
-#   at something before the Definition of done's mode-specific pipeline, push, or PR runs.
+#   verification section that stops the worker after the implementation commit, has it
+#   stand up the environment and write numbered verification steps for the captain, and
+#   pauses on the existing declared-external-wait convention instead of "done".
+#   The project's full check runs exactly ONCE, and only after the captain says they are
+#   finished - not before the pause, and not between the changes they ask for while
+#   looking, since each of those would only be repeated (captain instruction 2026-08-12).
+#   The worker reports that one result together with the confirmation and waits rather
+#   than driving itself into the next gate; firstmate decides on the reported result and
+#   never orders a re-run. Use it whenever the task needs the captain to look at
+#   something before the Definition of done's mode-specific pipeline, push, or PR runs.
 #   --secondmate writes a persistent secondmate charter. The project list
 #   is cloned into the secondmate home, while the natural-language scope
 #   tells the main firstmate when to route work there; routine churn stays in its own home;
@@ -484,18 +488,25 @@ if [ "$CAPTAIN_CHECK" -eq 1 ]; then
 IFS= read -r -d '' CAPTAIN_CHECK_SECTION <<EOF || true
 
 # Captain verification
-This task needs the captain to look at something before it ships, so the Definition of done below does not start automatically after your implementation commit - including any instruction in it to start validation, push, or open a PR "right away": that only applies once step 7 below tells you firstmate has given the go-ahead.
+This task needs the captain to look at something before it ships, so the Definition of done below does not start automatically after your implementation commit - including any instruction in it to start validation, push, or open a PR "right away": that only applies once step 9 below tells you firstmate has given the go-ahead.
 Lead the numbered verification steps you hand the captain with your own tab name (\`fm-$ID\`), so the captain can find you without asking firstmate to relay it.
-1. Implement, write tests, and commit as usual. Run your own test suite once to confirm it is green; do not start the full validation pipeline yet.
+1. Implement, write tests, and commit as usual. Run only the narrow tests you need while writing them.
+   Do NOT run the project's full check yet, and do not start the full validation pipeline.
+   The captain is about to look at this and may ask for changes, so a full run now is a run you will only have to repeat.
 2. Stand up the environment the captain will look at. Prefer the captain's own real data over synthetic seed data whenever it already exists: copy the captain's working directory or datastore wholesale (e.g. \`cp -R\`), never a single file in isolation - a live source can carry a write-ahead-log or journal sidecar that a single-file copy misses, silently handing you a stale snapshot. You may READ the captain's own copy or checkout to make that copy; NEVER write to it, run migrations against it, or point any server at it directly - only the copy you made is what anything you stand up talks to. If the walkthrough targets a specific device or deployment rather than a browser tab, pin it explicitly (e.g. by serial) before installing anything, so it lands on the one you set up and not another one nearby.
    Before building or installing against the copy, verify it: run an integrity check and confirm the specific record you need is actually present, and compare the copy's own auth or signing material against what the environment already expects - by hash only, never print or log the raw value - since a structurally valid copy with mismatched keys still fails silently later. Preserve what the copy is replacing by renaming it aside rather than deleting it, in case you need to roll back.
    Getting this order right matters beyond convenience: many apps clear their own stored session the moment a request comes back rejected, so if you skip straight to installing and the environment turns out broken, you can lose a working login with no fallback credential to recover it.
 3. Write numbered verification steps: which screen, which account, what to click or enter, and exactly what should appear when it is right. Where practical, also say what it looks like when it is wrong - that is how the captain actually judges it.
 4. Walk your own numbered verification steps yourself, end to end, exactly as you are about to hand them to the captain - reading the code a flow is supposed to take is not the same as that flow actually completing, and a step that used to work can silently dead-end.
 5. Do not call it working on a partial signal (a screen appearing, a button responding). Confirm the full round trip: the handshake or connection actually completing, the expected log or event appearing, and, where the target keeps one, its own record of last contact actually advancing.
-6. Append \`$PAUSED_VERB: awaiting captain confirmation - {what}\` and stop. Do not run /no-mistakes, push, or open a PR yet. Leave whatever you stood up for this check running - do not tear it down until step 8 below.
-7. When the captain confirms - whether relayed by firstmate or seen directly in your own pane - do not jump straight into the Definition of done on your own. Append a status line reporting the confirmation and wait for firstmate's go-ahead before you proceed; firstmate owns telling the captain and deciding when the next gate starts.
-8. Once firstmate gives the go-ahead, stop whatever you started for this check (rule 2's process-isolation boundary still applies: only what you started, only by the port-scoped helper, never a broad kill) before continuing into the Definition of done below.
+6. Append \`$PAUSED_VERB: awaiting captain confirmation - {what}\` and stop. Do not run /no-mistakes, push, or open a PR yet. Leave whatever you stood up for this check running - do not tear it down until step 9 below.
+7. While the captain is still looking, expect changes. Make each requested change, rebuild what they are looking at, and tell them it is ready.
+   Keep running only the narrow tests the change touches. Do NOT run the full check between changes - the captain is not finished yet.
+8. When the captain says it is done - whether relayed by firstmate or seen directly in your own pane - run the project's full check ONCE, now, on exactly that code.
+   This is the single full run for this task. Do not jump straight into the Definition of done on your own.
+   Append one status line carrying BOTH the captain's confirmation AND that run's result, then wait for firstmate's go-ahead before you proceed; firstmate owns telling the captain and deciding when the next gate starts.
+   🔴 firstmate decides on the result you just reported and will not ask you to run it again. If nothing has changed since that run, do not run it again either - not before pushing, not before opening the PR.
+9. Once firstmate gives the go-ahead, stop whatever you started for this check (rule 2's process-isolation boundary still applies: only what you started, only by the port-scoped helper, never a broad kill) before continuing into the Definition of done below.
 EOF
 else
   CAPTAIN_CHECK_SECTION=""
@@ -585,7 +596,7 @@ The path check is authoritative: \`git rev-parse --git-dir\` and \`git rev-parse
 If the top-level path is the primary checkout or not the worktree you were launched in, STOP - do not branch or commit here - append \`blocked: launched in primary checkout, not an isolated worktree\` to the status file and stop.
 
 1. First action: create your branch: \`git checkout -b fm/$ID\`.
-2. If the task names one or more tracked tickets, immediately make a commit containing only each named ticket's \`Status:\` line flipped to \`claimed\` - this marks the start, distinct from the implementation commit that later flips the same line to \`resolved (YYYY-MM-DD)\` at the end.
+2. If the task names one or more tracked tickets, immediately make a commit containing only each named ticket's \`Status:\` line flipped to \`claimed\` - this marks the start, distinct from the implementation commit that later flips the same line to \`resolved (YYYY-MM-DD HH:MM)\` at the end - date AND time, in the repository's local time (captain instruction 2026-08-12). Older tickets carrying a date alone stay valid; do not rewrite them.
    Skip this entirely when the task names no ticket; never go looking for one.$SETUP2
 
 $CODEGRAPH_SECTION
