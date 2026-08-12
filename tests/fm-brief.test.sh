@@ -1081,23 +1081,46 @@ test_captain_check_flag_generates_full_gate_and_is_refused_elsewhere() {
     "captain-check section must limit the pre-pause check to one local green run, not the full pipeline"
   assert_grep "Stand up the environment the captain will look at" "$brief" \
     "captain-check section must require standing up the review environment"
-  assert_grep "start any server the change needs" "$brief" \
-    "captain-check section must require starting any server the captain will need"
-  assert_grep "create the accounts or seed data the walkthrough needs" "$brief" \
-    "captain-check section must require preparing accounts/data ahead of the walkthrough"
+  # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
+  assert_grep 'own tab name (`fm-brief-captain-check-nomistakes`)' "$brief" \
+    "captain-check section must lead with the worker's own tab name so the captain can find it without a relay"
+  assert_grep "Prefer the captain's own real data over synthetic seed data" "$brief" \
+    "captain-check section must default to the captain's real data over synthetic seeds"
+  assert_grep "copy the captain's working directory or datastore wholesale" "$brief" \
+    "captain-check section must require a whole-directory copy, not a single file, to avoid missing a WAL/journal sidecar"
+  assert_grep "You may READ the captain's own copy or checkout to make that copy; NEVER write to it" "$brief" \
+    "captain-check section must split read-allowed from write-forbidden on the captain's own source of truth"
+  assert_no_grep "never read nor write" "$brief" \
+    "captain-check section must not blanket-forbid reading the captain's source, only writing to it"
+  assert_no_grep "be careful" "$brief" \
+    "captain-check section must not add caution language about the copy once it exists - it is ordinary disposable working data"
+  assert_grep "compare the copy's own auth or signing material against what the environment already expects - by hash only, never print or log the raw value" "$brief" \
+    "captain-check section must require comparing signing/auth material by hash, never printed in the clear"
+  assert_grep "Preserve what the copy is replacing by renaming it aside rather than deleting it" "$brief" \
+    "captain-check section must require preserving a replaced target rather than deleting it"
+  assert_grep "many apps clear their own stored session the moment a request comes back rejected" "$brief" \
+    "captain-check section must explain why the copy-then-verify order cannot be reversed"
+  assert_grep "Walk your own numbered verification steps yourself, end to end" "$brief" \
+    "captain-check section must require the worker to walk its own procedure before handing it to the captain"
   assert_grep "Write numbered verification steps" "$brief" \
     "captain-check section must require numbered verification steps"
   assert_grep "also say what it looks like when it is wrong" "$brief" \
     "captain-check section must ask for the wrong-looking case, not just the right one"
+  assert_grep "Do not call it working on a partial signal" "$brief" \
+    "captain-check section must require confirming the full round trip, not a partial UI signal"
   # shellcheck disable=SC2016 # Literal backticks and braces must remain unexpanded.
   assert_grep 'Append `paused: awaiting captain confirmation - {what}` and stop' "$brief" \
     "captain-check section must pause on the existing declared-external-wait verb, never done"
   assert_grep "Do not run /no-mistakes, push, or open a PR yet" "$brief" \
     "captain-check section must forbid starting the mode-specific pipeline before the pause clears"
+  assert_grep "Leave whatever you stood up for this check running - do not tear it down until step 8" "$brief" \
+    "captain-check section must forbid tearing down the review environment while captain confirmation is pending"
   assert_grep "do not jump straight into the Definition of done on your own" "$brief" \
     "captain-check section must forbid self-driving into the next gate on captain confirmation"
   assert_grep "wait for firstmate's go-ahead before you proceed" "$brief" \
     "captain-check section must require reporting to firstmate and waiting, not just reporting"
+  assert_grep "Once firstmate gives the go-ahead, stop whatever you started for this check" "$brief" \
+    "captain-check section must require stopping whatever the worker started, but only after the go-ahead, not during the captain's confirmation wait"
 
   for mode in direct-PR local-only; do
     id="brief-captain-check-$mode"
