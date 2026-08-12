@@ -506,7 +506,7 @@ It performs guarded fast-forward updates of firstmate and registered secondmate 
 
 ## 13. Agent-only reference skills
 
-These skills are not captain-invocable; load them only at their precise triggers.
+These skills are not captain-invocable, except the thin aliases `pts` and `ptt` below; load them only at their precise triggers.
 
 - `bootstrap-diagnostics` - load whenever the session-start digest's bootstrap or network-checks section prints an actionable diagnostic line (`MISSING:`, `MISSING_MANUAL:`, `BACKEND_INVALID:`, `NEEDS_GH_AUTH`, `TANGLE:`, `STARTUP_MEMORY_BUDGET:`, `CREW_DISPATCH: invalid`, `FLEET_SYNC:`, `NETWORK_CHECKS:`, `PR_CHECK_MIGRATION:`, `SECONDMATE_SYNC:`, `SECONDMATE_LIVENESS:`, `SECONDMATE_HANDOFF:`, `NUDGE_SECONDMATES:`, or `FMX:`); silence and `BOOTSTRAP_INFO:` need no load.
 - `diagnostic-reasoning` - load before scoping a reported bug and before acting on a diagnostic report.
@@ -525,8 +525,8 @@ These skills are not captain-invocable; load them only at their precise triggers
 - `firstmate-codexapp` - load before coordinating a visible Codex Desktop thread, evaluating a Codex App backend request, or reconciling Codex Desktop host-tool smoke evidence for Firstmate work.
 - `firstmate-coding-guidelines` - load before changing firstmate's shared, tracked material, as defined by section 1's list, whether editing directly or briefing a crewmate for a firstmate-repo task.
 - `feature-author-secondmate` - load before standing up a persistent secondmate whose job is to draft feature specs and tickets with the captain for one project.
-- `planner-to-spec` - load before writing or substantially revising a feature spec.
-- `planner-to-tickets` - load before writing a ticket set or handing one over for dispatch.
+- `planner-to-spec` - load before writing or substantially revising a feature spec; captain-invocable as `pts`.
+- `planner-to-tickets` - load before writing a ticket set or handing one over for dispatch; captain-invocable as `ptt`.
 
 ## 14. Relay
 
