@@ -488,14 +488,12 @@ pause_state_class() {  # <window> <task>
     return
   fi
   if [ -e "$STATE/.paused-$key" ] && [ "$(age_of "$recheck_file")" -lt "$STALE_ESCALATE_SECS" ]; then
-    if [ "$(window_kind "$win")" != secondmate ]; then
-      agent_alive=$(fm_backend_agent_alive "$(window_backend "$win")" "$win" 2>/dev/null) || agent_alive=unknown
-      if [ "$agent_alive" != dead ]; then
-        rm -f "$recheck_file"
-        printf 'none'
-        return
-      fi
-    fi
+    # Already classified paused on a prior poll and the recheck is not due yet:
+    # this IS the absorb decision, alive or dead, so it must return the token
+    # that routes to handle_paused_stale's long PAUSE_RESURFACE_SECS cadence,
+    # never the immediate-surface token - a live-but-not-yet-due pane returning
+    # 'none' here was re-surfacing on every poll instead of waiting out the
+    # cadence.
     printf 'paused'
     return
   fi

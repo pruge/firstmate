@@ -960,6 +960,57 @@ test_exited_declared_pause_is_bounded_but_live_gate_surfaces() {
   pass "exited declared-pause and captain-held panes use bounded pause cadence while a live decision gate still surfaces once"
 }
 
+# Regression for a wrong-token bug in pause_state_class's already-classified
+# fast path (an established .paused-<key> plus a still-young recheck marker):
+# the branch that decided to absorb a live agent's declared pause returned the
+# immediate-surface token 'none' instead of 'paused'. In production this fires
+# whenever a fresh watcher poll's pane hash drifts even slightly from the hash
+# recorded at the LAST surfacing (a blinking cursor, capture-timing jitter on
+# an otherwise genuinely idle pane) - .hash-<key> (this poll's stable-vs-prior-
+# poll comparison) still matches, but .stale-<key> (the exact hash last
+# recorded as surfaced) does not, which is exactly the "new distinct stale
+# hash" call site that used the fast path's return value directly instead of
+# masking it. That produced a fresh immediate "stale:" wake on every such
+# jitter instead of waiting out the long PAUSE_RESURFACE_SECS recheck cadence
+# handle_paused_stale intends. The dead-agent counterpart already stayed
+# bounded (test_exited_declared_pause_is_bounded_but_live_gate_surfaces above)
+# because its fallthrough already returned 'paused'; this locks the live-agent
+# side of the same fast path.
+test_established_declared_pause_live_agent_stays_bounded() {
+  local dir state fakebin out capture_file window key pane_hash prior_hash sig pid
+  dir=$(make_case established-declared-pause-live); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:fm-live-established"
+  printf 'idle awaiting captain confirmation\n' > "$capture_file"
+  printf 'window=%s\nkind=ship\nharness=grok\nbackend=tmux\n' "$window" > "$state/live-established.meta"
+  printf 'paused: awaiting captain confirmation\n' > "$state/live-established.status"
+  sig=$(seen_sig "$state/live-established.status"); printf '%s' "$sig" > "$state/.seen-live-established_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "idle awaiting captain confirmation")
+  prior_hash="not-quite-the-same-capture"
+  # This poll's capture is stable vs the last poll (.hash-<key> matches, so the
+  # stale counter keeps accumulating), but differs from the hash recorded at
+  # the LAST surfacing (.stale-<key>) - the exact jitter that reaches the
+  # vulnerable "new distinct stale hash" call site while .paused-<key> and a
+  # young recheck marker are already established from that prior surfacing.
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '%s' "$prior_hash" > "$state/.stale-$key"
+  printf '2\n' > "$state/.count-$key"
+  : > "$state/.paused-$key"
+  date +%s > "$state/.paused-rechecked-$key"
+  date +%s > "$state/.paused-resurfaced-$key"
+
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_FAKE_TMUX_CURRENT_COMMAND=grok FM_FAKE_CREW_STATE='state: paused · source: status-log · awaiting captain confirmation' \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=3600 FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_live "$pid" 30 || { reap "$pid"; fail "a jittered-hash live declared pause re-surfaced instead of waiting out the long recheck cadence: $(cat "$out")"; }
+  reap "$pid"
+  [ ! -s "$state/.wake-queue" ] || fail "a jittered-hash live declared pause enqueued a wake instead of waiting out the long recheck cadence: $(cat "$state/.wake-queue")"
+  [ -e "$state/.paused-$key" ] || fail "live declared pause lost its pause cadence marker"
+  pass "a live declared pause whose pane hash jitters against the last-surfaced hash stays absorbed on the bounded recheck cadence"
+}
+
 test_secondmate_paused_resurfaces_in_normal_mode() {
   local dir state fakebin out capture_file statusf window key pane_hash sig pid back
   dir=$(make_case secondmate-paused-resurface); state="$dir/state"; fakebin="$dir/fakebin"
@@ -2113,6 +2164,7 @@ test_busy_pane_default_turn_age_bound_is_3600s
 test_nonterminal_stale_not_working_surfaced
 test_nonterminal_stale_paused_absorbed_then_resurfaced
 test_exited_declared_pause_is_bounded_but_live_gate_surfaces
+test_established_declared_pause_live_agent_stays_bounded
 test_secondmate_paused_resurfaces_in_normal_mode
 test_secondmate_nonpaused_stale_remains_suppressed
 test_secondmate_unpause_clears_pause_tracking
