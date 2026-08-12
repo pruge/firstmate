@@ -177,6 +177,14 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/pts/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/ptt/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/project-management/SKILL.md",
       "audience": "agent-runtime"
     },
