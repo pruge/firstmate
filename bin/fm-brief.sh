@@ -52,6 +52,15 @@
 # to launch a ship task whose explicit --mode disagrees, so an adjusted brief and the
 # recorded task metadata cannot drift apart.
 # Ship briefs begin with a worktree-isolation assertion before the branch step.
+# Right after that assertion (ship) or right after the worktree intro (scout),
+# both scaffolds tell the worker to read the project's own AGENTS.md/CLAUDE.md
+# before starting work, treat it as binding rather than reference, and stop
+# with needs-decision on a conflict with this brief instead of picking a side
+# itself: a harness auto-loading that file is never assumed, since firstmate
+# spawns crews on multiple harnesses with different file-loading conventions.
+# This is a generic step with no per-project detail; a project's own AGENTS.md
+# is what carries its actual rules. Secondmate charters are untouched: a
+# charter spans multiple projects and is not a per-task work brief.
 # The branch step itself tells the worker to claim any named ticket right after
 # branching (a standalone "Status: claimed" commit), leaving the later flip to
 # "resolved" where it already lived: the implementation commit. This never
@@ -417,6 +426,11 @@ This is a SCOUT task: the deliverable is a written report, not a PR.
 The worktree is your laboratory - install, run, edit, and make scratch commits freely; all of it is discarded at teardown.
 The report is the only thing that survives, so anything worth keeping must be in it.
 
+If this repository's root has an \`AGENTS.md\` or \`CLAUDE.md\`, read it now, before any other work.
+It is binding project instruction, not background reference.
+If it conflicts with this brief or a firstmate instruction, stop and report \`needs-decision [key=project-instructions-conflict]: {summary of the conflict}\` rather than choosing yourself.
+If neither file exists, skip this step; that is normal, not a problem.
+
 $CODEGRAPH_SECTION
 
 # Rules
@@ -544,7 +558,7 @@ EOF
     ;;
   *)  # no-mistakes
     SETUP2="
-3. Run \`no-mistakes doctor\`; if it reports the repo is not initialized here, run \`no-mistakes init\`."
+4. Run \`no-mistakes doctor\`; if it reports the repo is not initialized here, run \`no-mistakes init\`."
     RULE1='1. Never push to the default branch. Never merge a PR.'
     IFS= read -r -d '' DOD <<EOF || true
 # Definition of done
@@ -596,7 +610,11 @@ The path check is authoritative: \`git rev-parse --git-dir\` and \`git rev-parse
 If the top-level path is the primary checkout or not the worktree you were launched in, STOP - do not branch or commit here - append \`blocked: launched in primary checkout, not an isolated worktree\` to the status file and stop.
 
 1. First action: create your branch: \`git checkout -b fm/$ID\`.
-2. If the task names one or more tracked tickets, immediately make a commit containing only each named ticket's \`Status:\` line flipped to \`claimed\` - this marks the start, distinct from the implementation commit that later flips the same line to \`resolved (YYYY-MM-DD HH:MM)\` at the end - date AND time, in the repository's local time (captain instruction 2026-08-12). Older tickets carrying a date alone stay valid; do not rewrite them.
+2. If this repository's root has an \`AGENTS.md\` or \`CLAUDE.md\`, read it now, before any other work.
+   It is binding project instruction, not background reference.
+   If it conflicts with this brief or a firstmate instruction, stop and report \`needs-decision [key=project-instructions-conflict]: {summary of the conflict}\` rather than choosing yourself.
+   If neither file exists, skip this step; that is normal, not a problem.
+3. If the task names one or more tracked tickets, immediately make a commit containing only each named ticket's \`Status:\` line flipped to \`claimed\` - this marks the start, distinct from the implementation commit that later flips the same line to \`resolved (YYYY-MM-DD HH:MM)\` at the end - date AND time, in the repository's local time (captain instruction 2026-08-12). Older tickets carrying a date alone stay valid; do not rewrite them.
    Skip this entirely when the task names no ticket; never go looking for one.$SETUP2
 
 $CODEGRAPH_SECTION

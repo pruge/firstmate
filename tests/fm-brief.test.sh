@@ -1170,6 +1170,8 @@ test_captain_check_flag_generates_full_gate_and_is_refused_elsewhere() {
 # The ticket-claim commit used to be a sub-sentence of the branch-creation step, and two
 # separate crews both skipped it (2026-08-11) after creating the branch and moving straight
 # on. It must render as its own numbered step so a worker cannot treat it as an aside.
+# Step 2 is now the project-instructions read (test_ship_and_scout_read_project_instructions_first),
+# so the ticket-claim step and the no-mistakes doctor-check step are each one number later.
 test_ticket_claim_is_its_own_numbered_setup_step() {
   local home id brief
   home="$TMP_ROOT/ticket-claim-step-home"
@@ -1181,14 +1183,68 @@ test_ticket_claim_is_its_own_numbered_setup_step() {
   if ! grep -qE '^1\. First action: create your branch' "$brief"; then
     fail "ship brief must open its numbered setup with the branch-creation step as step 1"
   fi
-  if ! grep -qE '^2\. If the task names one or more tracked tickets' "$brief"; then
-    fail "ship brief must render the ticket-claim commit as its own numbered step 2, not a sub-sentence of step 1"
+  if ! grep -qE '^3\. If the task names one or more tracked tickets' "$brief"; then
+    fail "ship brief must render the ticket-claim commit as its own numbered step 3, not a sub-sentence of step 1"
   fi
   # shellcheck disable=SC2016 # Literal backticks must remain unexpanded in the grep pattern.
-  if ! grep -qE '^3\. Run `no-mistakes doctor`' "$brief"; then
-    fail "no-mistakes ship brief must renumber its doctor-check step to 3 after the ticket-claim step"
+  if ! grep -qE '^4\. Run `no-mistakes doctor`' "$brief"; then
+    fail "no-mistakes ship brief must renumber its doctor-check step to 4 after the ticket-claim step"
   fi
   pass "fm-brief: the ticket-claim commit renders as its own numbered setup step"
+}
+
+# Generated 2026-08-13 after two real gateway-login incidents where a project's own
+# AGENTS.md/CLAUDE.md carried a safe sequence but nothing in the brief told the worker
+# to read it before starting work. A harness auto-loading that file is never assumed,
+# since firstmate spawns crews on multiple harnesses with different conventions - the
+# brief itself has to say it so every harness behaves the same. Ship and scout both need
+# it (a scout investigates under the project's own rules too); a secondmate charter spans
+# multiple projects and is not a per-task brief, so it must stay untouched.
+test_ship_and_scout_read_project_instructions_first() {
+  local home id brief
+  home="$TMP_ROOT/project-instructions-home"
+  mkdir -p "$home/data"
+
+  id="brief-project-instructions-ship"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "ship brief was not scaffolded"
+  # shellcheck disable=SC2016 # Literal backticks must remain unexpanded in the grep pattern.
+  if ! grep -qE '^2\. If this repository.s root has an `AGENTS\.md` or `CLAUDE\.md`, read it now, before any other work\.$' "$brief"; then
+    fail "ship brief must render the project-instructions read as its own numbered step 2, right after branch creation"
+  fi
+  assert_grep "It is binding project instruction, not background reference." "$brief" \
+    "ship brief must say project instructions are binding, not background reference"
+  # shellcheck disable=SC2016 # Literal backticks and braces must remain unexpanded.
+  assert_grep 'stop and report `needs-decision [key=project-instructions-conflict]: {summary of the conflict}` rather than choosing yourself' "$brief" \
+    "ship brief must require stopping and asking firstmate on a conflict with the brief, not choosing itself"
+  assert_grep "If neither file exists, skip this step; that is normal, not a problem." "$brief" \
+    "ship brief must say a missing AGENTS.md/CLAUDE.md is normal, not a warning"
+
+  id="brief-project-instructions-scout"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --scout >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "scout brief was not scaffolded"
+  assert_grep "If this repository's root has an \`AGENTS.md\` or \`CLAUDE.md\`, read it now, before any other work." "$brief" \
+    "scout brief must also read project instructions before any other work"
+  assert_grep "It is binding project instruction, not background reference." "$brief" \
+    "scout brief must say project instructions are binding, not background reference"
+  # shellcheck disable=SC2016 # Literal backticks and braces must remain unexpanded.
+  assert_grep 'stop and report `needs-decision [key=project-instructions-conflict]: {summary of the conflict}` rather than choosing yourself' "$brief" \
+    "scout brief must require stopping and asking firstmate on a conflict with the brief, not choosing itself"
+  assert_grep "If neither file exists, skip this step; that is normal, not a problem." "$brief" \
+    "scout brief must say a missing AGENTS.md/CLAUDE.md is normal, not a warning"
+
+  FM_HOME="$home" FM_SECONDMATE_CHARTER='sample domain' \
+    "$ROOT/bin/fm-brief.sh" brief-project-instructions-sm --secondmate --no-projects >/dev/null 2>&1
+  brief="$home/data/brief-project-instructions-sm/brief.md"
+  assert_present "$brief" "secondmate charter was not scaffolded"
+  assert_no_grep "read it now, before any other work" "$brief" \
+    "secondmate charter must not carry the per-task project-instructions step; it spans multiple projects and is not a work brief"
+  assert_no_grep "project-instructions-conflict" "$brief" \
+    "secondmate charter must not carry the project-instructions-conflict decision key"
+
+  pass "fm-brief: ship and scout briefs read binding project instructions before any other work, secondmate charters are untouched"
 }
 
 test_codegraph_setup_block_present_in_scout_and_ship() {
@@ -1273,3 +1329,4 @@ test_worktree_isolation_rule_covers_processes_in_ship_and_scout
 test_isolation_boundary_is_general_not_enumerated
 test_captain_check_flag_generates_full_gate_and_is_refused_elsewhere
 test_ticket_claim_is_its_own_numbered_setup_step
+test_ship_and_scout_read_project_instructions_first
