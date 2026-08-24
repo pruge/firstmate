@@ -1,0 +1,7 @@
+== Real consumer (bin/fm-doc-audience-check.sh) against BASE inventory (commit 23e8308, task-grill entry absent) ==
+fm-doc-audience-check: unclassified: .agents/skills/task-grill/SKILL.md, .agents/skills/task-planning/SKILL.md, docs/task-planning.md
+rc=1
+
+== Same consumer against HEAD inventory (commit 99c240a, task-grill entry present) ==
+fm-doc-audience-check: unclassified: .agents/skills/task-planning/SKILL.md, docs/task-planning.md
+rc=1

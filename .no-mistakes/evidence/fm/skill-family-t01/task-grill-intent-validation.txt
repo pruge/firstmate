@@ -1,0 +1,35 @@
+PASS frontmatter: name=task-grill
+PASS frontmatter: user-invocable false
+PASS frontmatter: metadata.internal true
+PASS description states when to load
+PASS (1) trigger condition via task-planning intake classification
+PASS (1) Simple requests skip to direct crew path
+PASS (2) design tree decisions branching off decisions
+PASS (2) children only where answer changes what gets built
+PASS (3) frontier = questions whose prerequisites are settled
+PASS (3) numbered questions each with recommended answer
+PASS (3) waits for captain's answers between rounds
+PASS (3) answers reshape the frontier
+PASS (3) done when frontier empty
+PASS (4) facts are worker's job: read target project clone directly
+PASS (4) delegate one focused scout
+PASS (4) only decisions go to the captain
+PASS (5) hard gate blocks spec/tickets/implementation until frontier exhausted + confirmation
+PASS (5) gate attributed to captain decision D4
+PASS (6) never answer on captain's behalf
+PASS (6) unresolved routed through captain-hold-lifecycle one-line reference
+PASS (7) writes docs/features/<feature-slug>/grill.md in target clone
+PASS (7) artifact holds design tree
+PASS (7) artifact holds round log
+PASS (7) artifact holds settled decisions
+PASS (7) terminology cleanups promoted to AGENTS.md Domain terms at landing
+PASS (8) challenge glossary conflicts immediately
+PASS (8) sharpen fuzzy terms into canonical names
+PASS (8) stress-test relationships with concrete scenarios
+PASS (8) ADR triple condition (hard-to-reverse AND surprising AND real trade-off)
+PASS style: ~60-120 lines (actual 91)
+PASS style: one sentence per line (no multi-sentence body lines)
+PASS style: plain dashes used for lists
+PASS style: imperative voice dominant (40 imperative-open lines)
+
+33/33 checks passed
