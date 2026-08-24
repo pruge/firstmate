@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>task-planning orchestrator rework — acceptance verification</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 60rem; color: #1a1a2e; line-height: 1.5; }
+  h1 { font-size: 1.4rem; } h2 { font-size: 1.15rem; margin-top: 2rem; border-bottom: 2px solid #4361ee; padding-bottom: .25rem; }
+  table { border-collapse: collapse; width: 100%; font-size: .88rem; }
+  th, td { text-align: left; vertical-align: top; padding: .45rem .6rem; border-bottom: 1px solid #dde; }
+  th { background: #f0f4ff; }
+  code { background: #eef; padding: .05rem .3rem; border-radius: 3px; font-size: .85em; }
+  .pass { color: #0a7a2f; font-weight: 700; white-space: nowrap; }
+  .meta { color: #556; font-size: .85rem; }
+  blockquote { margin: .2rem 0; padding: .35rem .7rem; background: #f7f9ff; border-left: 3px solid #b8c4ee; font-size: .82rem; }
+</style>
+</head>
+<body>
+<h1>Rework of <code>.agents/skills/task-planning/SKILL.md</code> into the planning-family orchestrator — acceptance verification</h1>
+<p class="meta">Commit <code>5c60769</code> on branch <code>fm/skill-family-t03</code> (base <code>8802737</code>).
+Files changed: <code>.agents/skills/task-planning/SKILL.md</code>, <code>docs/task-planning.md</code>. Verified in worktree at test time.</p>
+
+<h2>Required additions (intent items 1–11)</h2>
+<table>
+<tr><th>#</th><th>Requirement</th><th>Status</th><th>Evidence (file:line, quoted)</th></tr>
+<tr><td>1</td><td>Fog-of-war: fuzzy questions under <em>Not yet specified</em>, never tickets; graduation test = sharp question now?</td><td class="pass">PASS</td><td><blockquote>L110: Record them under a `Not yet specified` section rather than splitting them into tickets or forcing premature decisions.<br>L112: The test is a single question: can this be stated as a sharp question now?<br>L129 (template): ## Not yet specified</blockquote></td></tr>
+<tr><td>2</td><td>Map-as-index: wayfinder.md is index only; each decision's substance lives in exactly one place</td><td class="pass">PASS</td><td><blockquote>L114–118: ### Map-as-index / `wayfinder.md` is an index only. / Each decision's substance lives in exactly one place: the `grill.md` decision log while unsettled, the spec's Decisions section once graduated, or a prototype's recorded verdict.</blockquote></td></tr>
+<tr><td>3</td><td>Ticket-type mapping: research=--scout autonomous; prototype=task-design; grilling=task-grill round/captain hold; manual=captain checklist/crew</td><td class="pass">PASS</td><td><blockquote>L150–156 dispatch-shape table: research question → focused `--scout` investigation (nobody waits); design question → `task-design` prototype; preference/policy/trade-off → `task-grill` round or captain hold; manual work outside the codebase → captain checklist or ordinary crew task.</blockquote></td></tr>
+<tr><td>4</td><td>Seams-first: existing seams, fewest, highest placement; captain confirms BEFORE spec.md</td><td class="pass">PASS</td><td><blockquote>L168–172: Prefer existing seams over inventing new ones. / Choose the fewest seams that can carry all the user stories, and place each seam as high in the architecture as it will reach. / Confirm the seam choice with the captain ... before writing `spec.md`.</blockquote></td></tr>
+<tr><td>5</td><td>Spec template: extensive numbered user stories; no paths/snippets except noted validated prototype snippets</td><td class="pass">PASS</td><td><blockquote>L182 (template): ## User stories &lt;numbered and extensive&gt;<br>L205–206 drafting rules: numbered and extensive, one story per capability ... / no file paths and no code snippets, with one exception: a validated prototype snippet ... explicitly noted as coming from the prototype that validated it.</blockquote></td></tr>
+<tr><td>6</td><td>Ticket quiz loop: granularity / blocking edges / merge-or-split, iterate until approval</td><td class="pass">PASS</td><td><blockquote>L295 §8 Captain review: the ticket quiz; L308–314 quiz bullets + Revise the decomposition and repeat the quiz across as many rounds as the graph needs.</blockquote></td></tr>
+<tr><td>7</td><td>Expand-contract for wide refactors: expand alongside, migrate in batches, contract last</td><td class="pass">PASS</td><td><blockquote>L261–268: expand - introduce the new mechanism alongside the old ...; migrate - move call sites in independent batches, one batch per ticket; contract - remove the old mechanism in a final ticket, only after the last migration lands.</blockquote></td></tr>
+<tr><td>8</td><td>Recursion gate (D6): complexity re-judged at EVERY dispatch; overgrown ticket becomes its own parent feature through the same pipeline; ceiling = one fresh context window</td><td class="pass">PASS</td><td><blockquote>L321–330 §9 Recursion gate at dispatch: Re-judge the section 2 complexity gate at EVERY dispatch, not only at intake. / becomes its own parent feature and runs the same family pipeline of `task-grill`, then optional `task-design`, then this skill. Context-window ceiling also at L233 and in quality gate L290.</blockquote></td></tr>
+<tr><td>9</td><td>T-review mandate (D7): terminal captain-review ticket blocked by all others; light=inline fix+docs; major=new parent plan via recursion; added to quality gate checklist</td><td class="pass">PASS</td><td><blockquote>L269–275 Terminal review ticket: MUST end with a terminal captain-review ticket blocked by all other tickets ... Light feedback means the existing crew fixes it inline and updates the docs to match reality. Major feedback means a new parent plan through the recursion gate. Quality gate item at L289.</blockquote></td></tr>
+<tr><td>10</td><td>Hard grill gate reference (D4): non-Simple intake goes through task-grill first; one-line pointer only</td><td class="pass">PASS</td><td><blockquote>L73–75: single-paragraph gate pointer ending "`task-grill` owns that gate." — full D4 contract stays in task-grill/SKILL.md L52–56.</blockquote></td></tr>
+<tr><td>11</td><td>Sibling-owned content removed; duplications become one-line cross-references (zero duplicated sibling prose)</td><td class="pass">PASS</td><td>6-gram overlap scan of SKILL.md against task-grill/SKILL.md and task-design/SKILL.md found only frontmatter boilerplate (<code>user-invocable: false metadata: internal: true</code>), zero shared contract sentences. Ownership lists are one-liners (L24–28).</td></tr>
+</table>
+
+<h2>Preserved contracts (must remain unchanged)</h2>
+<table>
+<tr><th>Contract</th><th>Status</th><th>Evidence</th></tr>
+<tr><td>Complexity gate</td><td class="pass">PRESERVED</td><td>§2 Simple/Planned/Wayfinder-planned criteria unchanged from base (diff-verified).</td></tr>
+<tr><td>Quality gate</td><td class="pass">PRESERVED</td><td>§7 keeps all original checklist items; only two items appended (L289–290).</td></tr>
+<tr><td>Captain approval gate</td><td class="pass">PRESERVED</td><td>§8 retains hold-lifecycle approval and the "does not grant merge authority" clause (L318–319).</td></tr>
+<tr><td>Risk-based verification</td><td class="pass">PRESERVED</td><td>§11 routine/elevated/critical intact; "does not force `no-mistakes` on every ticket" retained (L352, L356–358).</td></tr>
+<tr><td>Handoff to fm-brief.sh/fm-spawn.sh</td><td class="pass">PRESERVED</td><td>§10 steps + "Do not create a second dispatch system." (L337–348).</td></tr>
+<tr><td>&lt;parent-id&gt;-t&lt;TNN&gt; identity</td><td class="pass">PRESERVED</td><td>L339, L344 (valid per <code>fm_task_id_creation_valid</code>).</td></tr>
+<tr><td>Artifact location projects/&lt;project&gt;/docs/features/&lt;slug&gt;/</td><td class="pass">PRESERVED</td><td>L82 workspace tree, L339 brief pointer; grill.md/design/ added beside them only.</td></tr>
+</table>
+
+<h2>docs/task-planning.md minimal sync (accepted work)</h2>
+<table>
+<tr><th>Item</th><th>Status</th><th>Evidence</th></tr>
+<tr><td>Intro names three-member family orchestrated by task-planning</td><td class="pass">PASS</td><td>L3–4.</td></tr>
+<tr><td>Artifact-flow diagram shows task-grill + optional task-design ahead of spec/tickets</td><td class="pass">PASS</td><td>Diagram lines 30–53.</td></tr>
+<tr><td>Summary paragraph covers grill gate, ticket quiz, terminal captain-review ticket, recursion gate without restating sibling contracts</td><td class="pass">PASS</td><td>L24–26.</td></tr>
+</table>
+
+<h2>Repo style rules (firstmate-coding-guidelines)</h2>
+<ul>
+<li>Em dash scan over both changed files: <strong>zero em dashes</strong> (plain dash only). PASS.</li>
+<li>One-sentence-per-line check on every line ADDED by this commit in both files: <strong>0 violations</strong>. Multi-sentence lines found in docs/task-planning.md are all pre-existing lines untouched by this commit. PASS.</li>
+<li>One-owner rule: no sibling contract restated (see item 11 above). PASS.</li>
+</ul>
+
+<h2>Automated checks run</h2>
+<ul>
+<li><code>tests/fm-documentation-audiences.test.sh</code> (the CI docs-only lane for changes touching <code>.agents/**</code>): all 4 structural checks ok — inventory classification, safe-failure modes, owner pointers, local-link resolution.</li>
+<li><code>bin/fm-doc-audience-check.sh</code>: <code>ok surfaces=77 local_links=266</code>.</li>
+</ul>
+<p class="meta">Note: this change is natural-language skill prose consumed by agents; the emitted markdown file is itself the intentional owned text contract, so content-level verification against the acceptance criteria is the appropriate behavioral check here. There is no rendered UI surface beyond the tracked Markdown itself.</p>
+</body>
+</html>
