@@ -29,6 +29,8 @@ The output is a set of inspectable artifacts. The plan is not hidden reasoning.
 
 Do not run this full workflow for every request. At intake, classify the request using evidence rather than a fixed token-expensive ritual.
 
+At intake also inspect the target project's `docs/features/`: an existing feature directory covering this request means resume or extend that plan instead of duplicating it, and its resolved decisions are established evidence.
+
 ### Simple
 
 Use the normal Firstmate crew lifecycle directly when all of the following are true:
@@ -64,10 +66,10 @@ When uncertain between Planned and Wayfinder-planned, prefer the cheaper Planned
 
 ## 2. Establish the planning workspace
 
-Before writing artifacts, allocate the Firstmate task id and create:
+Before writing artifacts, allocate the Firstmate task id, choose a kebab-case `<feature-slug>` for the request, and create the feature directory inside the target project's primary clone:
 
 ```text
-data/<task-id>/plan/
+projects/<project>/docs/features/<feature-slug>/
   wayfinder.md   # only for Wayfinder-planned work
   spec.md
   tickets/
@@ -76,7 +78,9 @@ data/<task-id>/plan/
     ...
 ```
 
-These are private Firstmate planning artifacts. Do not place them in the project worktree unless the captain explicitly asks for project documentation.
+These documents live with their project so the captain can browse every planned or running feature per project in one place, and firstmate reads them back at intake and at dispatch. Writing them is hard rule 1's enumerated `task-planning` exception; nothing else under `projects/` is authorized. Leave them uncommitted working documents by default - versioning them into the repository happens only through the project's normal delivery path when the captain asks.
+
+Record the `<project>:<feature-slug>` pair in the parent task's backlog note so runtime state stays linked to the documents.
 
 The planning directory is evidence for the captain and for later supervision. It must contain conclusions and rationale, not hidden chain-of-thought or raw model deliberation.
 
@@ -255,7 +259,7 @@ After approval, stop planning and return to Firstmate's existing execution path.
 For each ready ticket:
 
 1. resolve its concrete delivery mode and yolo posture using the existing Firstmate intake rules;
-2. file the ticket as its own backlog work item and create the normal brief at `data/<parent-id>-t<TNN>/brief.md`, embedding the ticket content and pointing at `data/<parent-id>/plan/spec.md`;
+2. file the ticket as its own backlog work item and create the normal brief at `data/<parent-id>-t<TNN>/brief.md`, embedding the ticket content and pointing at `projects/<project>/docs/features/<feature-slug>/spec.md`;
 3. spawn the existing crewmate using `fm-spawn.sh` and the selected harness/profile;
 4. supervise through the existing lifecycle;
 5. unlock dependent tickets only after their declared predecessor is actually complete; filing tickets as separate backlog items with explicit blocked-by notes lets ordinary queue re-evaluation own this unlocking.
