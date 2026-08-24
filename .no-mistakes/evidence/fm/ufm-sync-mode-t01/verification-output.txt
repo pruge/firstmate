@@ -1,0 +1,26 @@
+PASS: frontmatter parses as valid YAML with name updatefirstmate
+PASS: new section has exact required title
+PASS: new section placed before ## Safety
+PASS: new section contains exactly nine numbered procedure steps
+PASS: step 2: upstream remote add command
+PASS: step 2: fetch upstream main
+PASS: step 3: divergence quantification command
+PASS: step 4: dated sync branch command
+PASS: step 5: merge upstream/main
+PASS: step 5: UNION conflict policy named
+PASS: step 5: keeps planning-family skills
+PASS: step 5: keeps documentation-audiences entries
+PASS: step 5: never delete downstream-only files
+PASS: step 5: prefer-upstream carve-out
+PASS: step 6: local lint validation
+PASS: step 6: local full test validation
+PASS: step 7: push through the gate only
+PASS: step 8: merge-commit authority
+PASS: step 8: squash forbidden
+PASS: step 8: squash rationale recorded
+PASS: step 9: post-landing refresh flow
+PASS: step 9: refresh outcomes stated
+PASS: Safety: pull-only line present
+PASS: Safety: nothing pushed to upstream
+
+result: 24 passed, 0 failed
