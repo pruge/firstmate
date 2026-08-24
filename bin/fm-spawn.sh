@@ -1750,14 +1750,25 @@ fi
 # silent no-op it always was. Runs here, right after PROJ_ABS resolves and
 # before any worktree or backend window/session is created, so a refusal never
 # leaves a half-made copy or pane behind. --secondmate spawns never reach this
-# branch (KIND=secondmate takes the other branch above) and --no-ports was
-# already refused for them at argument-parsing time.
-if [ "$KIND" != secondmate ] && [ "$NO_PORTS" -ne 1 ] && [ "$BACKEND_PORT_SET" -ne 1 ]; then
+# branch (KIND=secondmate takes the other branch above), --no-ports was
+# already refused for them at argument-parsing time, and --relaunch never
+# reaches it either: its runtime - port pair included - was decided at the
+# original intake and is adopted as-is from the task's record.
+if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] && [ "$NO_PORTS" -ne 1 ] && [ "$BACKEND_PORT_SET" -ne 1 ]; then
   PORTS_CONTRACT_FILE="$PROJ_ABS/$FM_WORKTREE_RUNTIME_WEB_REL/.ports.main"
   if [ -f "$PORTS_CONTRACT_FILE" ]; then
     echo "error: $(basename "$PROJ_ABS") has a port contract ($PORTS_CONTRACT_FILE) but this spawn passed neither --backend-port nor --frontend-port; resolve a pair at intake exactly like --model/--effort, or pass --no-ports if this exact task deliberately never runs the dev servers" >&2
     exit 1
   fi
+fi
+
+# Pre-flight an intake-decided pair through the exact refusals the library's
+# port write performs (.ports.main collisions, live binds) while nothing has
+# been created yet, so a port grabbed between intake and here fails the spawn
+# before any worktree move, wrangler-state copy, or backend window/session
+# exists. The library still re-validates independently at write time.
+if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] && [ "$BACKEND_PORT_SET" -eq 1 ]; then
+  fm_worktree_runtime_validate_ports "$PROJ_ABS" "$BACKEND_PORT_ARG" "$FRONTEND_PORT_ARG" || exit 1
 fi
 
 [ -f "$BRIEF" ] || { echo "error: no brief at $BRIEF" >&2; exit 1; }

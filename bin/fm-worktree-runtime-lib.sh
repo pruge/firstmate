@@ -163,33 +163,21 @@ fm_worktree_runtime_port_is_free() {  # <port>
   return 1
 }
 
-# Validate and write an explicit BACKEND_PORT/FRONTEND_PORT pair - chosen by
-# firstmate at intake, never by this library - to code/web/.ports.worktree.
-# Both empty means this exact spawn needs no port pair (no contract on the
-# project, or an explicit --no-ports); it actively REMOVES any
-# code/web/.ports.worktree already sitting in the worktree rather than leaving
-# it - a task worktree is recycled and .ports.worktree is gitignored, so a
-# stale file from a prior occupant would otherwise survive untouched and hand
-# the new occupant a port pair nobody chose for it. A removal failure is
-# treated exactly like a write failure: it prints a clear error and fails the
-# spawn rather than launching against a leftover value.
-# Any validation failure for a given pair (non-integer, non-positive, equal to
-# each other, equal to code/web/.ports.main's own pair, or already bound)
-# prints a clear error and returns non-zero; the caller must fail the spawn
-# rather than fall back to choosing a different pair.
-fm_worktree_runtime_write_ports() {  # <worktree-root> <project-root> <backend-port> <frontend-port>
-  local wt=$1 proj=$2 backend_port=$3 frontend_port=$4
-  local wt_web="$wt/$FM_WORKTREE_RUNTIME_WEB_REL" proj_web="$proj/$FM_WORKTREE_RUNTIME_WEB_REL"
+# Validate an explicit BACKEND_PORT/FRONTEND_PORT pair - chosen by firstmate at
+# intake, never by this library - against everything except the destination
+# worktree itself: pair completeness, positive-integer shape, distinctness,
+# collision with code/web/.ports.main's own pair, and live binds. Touches no
+# file, so fm-spawn.sh can refuse a doomed pair while nothing has been created
+# yet (no worktree move, no wrangler-state copy, no backend window/session),
+# and fm_worktree_runtime_write_ports below runs these same refusals before it
+# writes. Both ports empty is the legitimate no-pair case and passes silently.
+# Every refusal prints a clear error and returns non-zero; the caller must fail
+# the spawn rather than fall back to choosing a different pair.
+fm_worktree_runtime_validate_ports() {  # <project-root> <backend-port> <frontend-port>
+  local proj=$1 backend_port=$2 frontend_port=$3
+  local proj_web="$proj/$FM_WORKTREE_RUNTIME_WEB_REL"
 
-  if [ -z "$backend_port" ] && [ -z "$frontend_port" ]; then
-    if [ -e "$wt_web/.ports.worktree" ]; then
-      rm -f "$wt_web/.ports.worktree" || {
-        echo "error: fm-spawn: failed to remove stale $wt_web/.ports.worktree for a spawn with no port pair" >&2
-        return 1
-      }
-    fi
-    return 0
-  fi
+  [ -n "$backend_port" ] || [ -n "$frontend_port" ] || return 0
   if [ -z "$backend_port" ] || [ -z "$frontend_port" ]; then
     echo "error: fm-spawn: backend-port and frontend-port must both be given, or neither (got backend='$backend_port' frontend='$frontend_port')" >&2
     return 1
@@ -222,13 +210,39 @@ fm_worktree_runtime_write_ports() {  # <worktree-root> <project-root> <backend-p
   fi
 
   fm_worktree_runtime_port_is_free "$backend_port" || {
-    echo "error: fm-spawn: backend-port $backend_port is not confirmed free; refusing to write $wt_web/.ports.worktree" >&2
+    echo "error: fm-spawn: backend-port $backend_port is not confirmed free; refusing to assign it to this worktree" >&2
     return 1
   }
   fm_worktree_runtime_port_is_free "$frontend_port" || {
-    echo "error: fm-spawn: frontend-port $frontend_port is not confirmed free; refusing to write $wt_web/.ports.worktree" >&2
+    echo "error: fm-spawn: frontend-port $frontend_port is not confirmed free; refusing to assign it to this worktree" >&2
     return 1
   }
+}
+
+# Write a firstmate-decided BACKEND_PORT/FRONTEND_PORT pair to
+# code/web/.ports.worktree after validating it. Both empty means this exact
+# spawn needs no port pair (no contract on the project, or an explicit
+# --no-ports); it actively REMOVES any code/web/.ports.worktree already sitting
+# in the worktree rather than leaving it - a task worktree is recycled and
+# .ports.worktree is gitignored, so a stale file from a prior occupant would
+# otherwise survive untouched and hand the new occupant a port pair nobody
+# chose for it. A removal failure is treated exactly like a write failure: it
+# prints a clear error and fails the spawn rather than launching against a
+# leftover value.
+fm_worktree_runtime_write_ports() {  # <worktree-root> <project-root> <backend-port> <frontend-port>
+  local wt=$1 proj=$2 backend_port=$3 frontend_port=$4
+  local wt_web="$wt/$FM_WORKTREE_RUNTIME_WEB_REL"
+
+  if [ -z "$backend_port" ] && [ -z "$frontend_port" ]; then
+    if [ -e "$wt_web/.ports.worktree" ]; then
+      rm -f "$wt_web/.ports.worktree" || {
+        echo "error: fm-spawn: failed to remove stale $wt_web/.ports.worktree for a spawn with no port pair" >&2
+        return 1
+      }
+    fi
+    return 0
+  fi
+  fm_worktree_runtime_validate_ports "$proj" "$backend_port" "$frontend_port" || return 1
 
   mkdir -p "$wt_web" || {
     echo "error: fm-spawn: could not create $wt_web for port assignment" >&2

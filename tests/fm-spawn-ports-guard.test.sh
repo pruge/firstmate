@@ -178,6 +178,42 @@ test_contract_present_both_ports_given_passes() {
   pass "a port-contract project launches normally when both --backend-port and --frontend-port are given"
 }
 
+# --- 3b. an already-bound pair is refused before anything is created ---------
+
+# The refusal must fire while no window exists and nothing has been sent to the
+# backend: a port grabbed between intake and spawn otherwise leaves an orphaned
+# pane and a half-made wrangler-state copy behind before the library's own
+# validate-and-write refuses.
+test_already_bound_pair_refused_before_anything_is_created() {
+  local rec id out status listen_port nc_pid
+  id=ports-guard-bound-z9
+  rec=$(make_ports_guard_case ports-guard-bound "$id" --with-contract)
+  read_ports_guard_record "$rec"
+
+  listen_port=41881
+  nc -l "$listen_port" >/dev/null 2>&1 &
+  nc_pid=$!
+  sleep 0.3
+  if ! lsof -nP -iTCP:"$listen_port" -sTCP:LISTEN >/dev/null 2>&1; then
+    kill "$nc_pid" 2>/dev/null
+    wait "$nc_pid" 2>/dev/null
+    echo "note: could not confirm the test listener bound $listen_port via lsof; skipping the pre-flight refusal assertion" >&2
+    return 0
+  fi
+
+  out=$(run_ports_guard_spawn "$id" --mode no-mistakes --yolo off \
+    --backend-port "$listen_port" --frontend-port 5404)
+  status=$?
+  kill "$nc_pid" 2>/dev/null
+  wait "$nc_pid" 2>/dev/null
+
+  expect_code 1 "$status" "an already-bound backend-port must be refused"
+  assert_contains "$out" "not confirmed free" "refusal did not name the failed liveness check"
+  assert_absent "$HOME_DIR/state/$id.meta" "a refused already-bound pair must not write task metadata"
+  [ ! -s "$SEND_LOG" ] || fail "an already-bound pair must be refused before anything is sent to the backend (got: $(cat "$SEND_LOG"))"
+  pass "an already-bound port pair is refused before any window or copy exists"
+}
+
 # --- 4. contract present + --no-ports -> passes, and a stale .ports.worktree
 # from a recycled worktree is actively removed, not silently inherited -------
 
@@ -278,6 +314,43 @@ test_relaunch_refuses_port_flags() {
   pass "--relaunch refuses --backend-port/--frontend-port/--no-ports instead of re-deciding the runtime"
 }
 
+# --- 7b. a flagless relaunch adopts the recorded pair instead of tripping the
+# intake guard --------------------------------------------------------------
+
+# Regression: the intake port-contract guard used to fire on --relaunch too,
+# but relaunch refuses all three port flags, so a ship/scout task on a port-
+# contract project could never be relaunched. A flagless relaunch must get past
+# the guard (its runtime was decided at the original intake) and proceed to the
+# endpoint checks; here it deterministically stops at the agent-free proof
+# because the fake tmux reports the recorded endpoint as missing.
+test_flagless_relaunch_adopts_recorded_pair() {
+  local rec id first_out out status
+  id=ports-guard-relaunch-ok-z10
+  rec=$(make_ports_guard_case ports-guard-relaunch-ok "$id" --with-contract)
+  read_ports_guard_record "$rec"
+
+  first_out=$(run_ports_guard_spawn "$id" --mode no-mistakes --yolo off \
+    --backend-port 8904 --frontend-port 5405)
+  expect_code 0 "$?" "the initial spawn carrying the pair must launch"
+  assert_contains "$first_out" "spawned $id" "initial spawn did not report success"
+  assert_grep "backend_port=8904" "$HOME_DIR/state/$id.meta" \
+    "the initial spawn did not record the decided pair in metadata"
+
+  out=$(FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" \
+    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+    FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+    PATH="$FAKEBIN_DIR:$PATH" \
+    "$SPAWN" "$id" --relaunch 2>&1)
+  status=$?
+  assert_not_contains "$out" "has a port contract" \
+    "a flagless relaunch must adopt the task's recorded pair instead of tripping the intake port-contract guard"
+  assert_contains "$out" "agent-free" \
+    "a flagless relaunch should have proceeded past the port guard to the endpoint checks"
+  assert_grep "backend_port=8904" "$HOME_DIR/state/$id.meta" \
+    "a refused relaunch must preserve the recorded pair lines verbatim"
+  pass "a flagless --relaunch reuses the recorded pair without re-deciding the runtime"
+}
+
 # --- 8. batch dispatch forwards the shared pair to each single-task exec -----
 
 test_batch_forwards_shared_pair() {
@@ -312,6 +385,8 @@ test_no_ports_escape_hatch_passes_and_clears_stale_file
 test_malformed_or_one_sided_pair_refused_at_parse
 test_secondmate_refuses_port_pair
 test_relaunch_refuses_port_flags
+test_already_bound_pair_refused_before_anything_is_created
+test_flagless_relaunch_adopts_recorded_pair
 test_batch_forwards_shared_pair
 
 echo "# all fm-spawn-ports-guard tests passed"
