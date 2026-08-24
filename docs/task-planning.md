@@ -86,5 +86,3 @@ Source-audited against this repository:
 - **Parent/child identity.** The parent request is one ordinary task whose backlog note records the `<project>:<feature-slug>` pair. Each ready ticket becomes its own Firstmate task with id `<parent-id>-t<TNN>` (valid per `fm_task_id_creation_valid`: `[A-Za-z0-9._-]`, at most 64 chars); its brief embeds the ticket content and points at `projects/<project>/docs/features/<feature-slug>/spec.md`.
 - **Dependency-aware dispatch.** Each ready ticket is filed as its own Queued backlog item with an explicit blocked-by note; the ordinary backlog re-evaluation after each teardown and heartbeat unlocks dependents. No new dispatch machinery is introduced.
 - **Risk-based verification.** A ticket's routine/elevated/critical level shapes evidence expectations inside the selected delivery path but never lowers a project's standing delivery posture; `no-mistakes-prod-only` classification still wins for product-facing work.
-
-Live intake tests (simple / planned / wayfinder-planned) against a real firstmate session remain the outstanding validation step before this PR leaves draft.
