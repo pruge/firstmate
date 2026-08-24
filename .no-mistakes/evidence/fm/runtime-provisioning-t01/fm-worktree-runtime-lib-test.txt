@@ -1,0 +1,25 @@
+FM_TEST_BEGIN 2026-08-24T13:04:32Z tests/fm-worktree-runtime-lib.test.sh family=unclassified expected_gate_skip=none
+ok - fm_worktree_runtime_provision copies the active database file
+ok - fm_worktree_runtime_provision skips a *.bak-* backup file
+ok - fm_worktree_runtime_provision prunes a .bak-* backup directory
+ok - fm_worktree_runtime_provision copies sibling state dirs (do/)
+ok - fm_worktree_runtime_provision copies backend/.dev.vars
+ok - fm_worktree_runtime_provision copies frontend/.env and .env.production
+ok - fm_worktree_runtime_provision is a silent no-op for a project with no code/web layout (e.g. firstmate's own worktrees)
+ok - fm_worktree_runtime_provision writes an explicit valid port pair verbatim
+ok - fm_worktree_runtime_provision rewrites frontend/.env's VITE_BACKEND_URL to the assigned backend port
+ok - fm_worktree_runtime_provision leaves frontend/.env.production untouched
+ok - fm_worktree_runtime_provision leaves VITE_BACKEND_URL untouched when no ports are given (no ports contract for this spawn)
+ok - fm_worktree_runtime_provision is a silent no-op when both ports are empty
+ok - fm_worktree_runtime_provision removes a stale .ports.worktree from a recycled worktree when no port pair is given
+ok - fm_worktree_runtime_write_ports refuses when only one of backend-port/frontend-port is given
+ok - fm_worktree_runtime_write_ports refuses a non-integer or non-positive port value
+ok - fm_worktree_runtime_write_ports refuses a pair whose two values are equal
+ok - fm_worktree_runtime_write_ports refuses a pair colliding with .ports.main
+ok - fm_worktree_runtime_write_ports refuses a port that is already listening
+ok - fm_worktree_runtime_provision takes a fresh copy on every call, replacing recycled content
+# all fm-worktree-runtime-lib tests passed
+FM_TEST_END 2026-08-24T13:04:34Z tests/fm-worktree-runtime-lib.test.sh exit=0 duration_ms=1720 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=1845
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=1720 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-worktree-runtime-lib.test.sh duration_ms=1720

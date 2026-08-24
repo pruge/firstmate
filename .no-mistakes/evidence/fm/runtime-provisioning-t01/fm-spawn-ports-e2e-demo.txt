@@ -1,0 +1,32 @@
+=== spawn: fm-spawn.sh demo-e2e-t1 <proj> --mode no-mistakes --yolo off --backend-port 9102 --frontend-port 5402 ===
+warning: /tmp/fm-e2e-demo/case/home/data/demo-e2e-t1/brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned demo-e2e-t1 harness=codex kind=ship mode=no-mistakes yolo=off window=firstmate:fm-demo-e2e-t1 worktree=/tmp/fm-e2e-demo/case/wt-pool/demo-e2e-t1
+=== spawn exit: 0 ===
+
+=== worktree runtime state after spawn ===
+--- code/web/.ports.worktree
+BACKEND_PORT=9102
+FRONTEND_PORT=5402
+--- code/web/backend/.dev.vars
+SECRET=dev-only
+--- code/web/backend/.wrangler/state/v3/d1/main.sqlite
+CREATE TABLE tasks;
+--- code/web/frontend/.env
+VITE_BACKEND_URL=http://localhost:9102
+VITE_OTHER=x
+--- code/web/frontend/.env.production
+VITE_BACKEND_URL=https://api.prod.example.com
+
+=== state/demo-e2e-t1.meta port lines ===
+backend_port=9102
+frontend_port=5402
+
+=== refusal demo: same project relaunched flagless must adopt the recorded pair ===
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 4s ago).
+
+=== flagless --relaunch on port-contract project: must NOT trip the intake guard ===
+PASS: no 'has a port contract' refusal; relaunch proceeded past the guard (exit=3)
+backend_port=9102
+frontend_port=5402
