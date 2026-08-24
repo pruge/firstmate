@@ -91,6 +91,18 @@ failed=0
 # a failure to create a directory or copy a file is a stderr warning only.
 copy_entry() {  # <src-path> <dst-path> <declared-rel>
   local src=$1 dst=$2 rel=$3 f destfile destdir
+  if [ ! -d "$src" ]; then
+    destdir=$(dirname "$dst")
+    if ! mkdir -p "$destdir" 2>/dev/null; then
+      echo "warning: fm-worktree-bootstrap: could not create directory $destdir for '$rel'" >&2
+      return 1
+    fi
+    if ! cp -p "$src" "$dst" 2>/dev/null; then
+      echo "warning: fm-worktree-bootstrap: failed to copy '$src' of '$rel' into $dst" >&2
+      return 1
+    fi
+    return 0
+  fi
   while IFS= read -r -d '' f; do
     # For a bare-file entry <dst> already names the destination file itself,
     # and find echoes exactly that source path; anything deeper keeps its
@@ -109,10 +121,10 @@ copy_entry() {  # <src-path> <dst-path> <declared-rel>
       echo "warning: fm-worktree-bootstrap: failed to copy '$f' of '$rel' into $dst" >&2
       return 1
     fi
-  done < <(find "$src" -type f -print0 2>/dev/null)
+  done < <(find -L "$src" -type f -print0 2>/dev/null)
 }
 
-while IFS= read -r rel; do
+while IFS= read -r rel || [ -n "$rel" ]; do
   rel="${rel%%#*}"
   rel="$(printf '%s' "$rel" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
   [ -n "$rel" ] || continue

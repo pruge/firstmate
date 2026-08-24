@@ -151,15 +151,23 @@ for port in "${PORTS[@]}"; do
       fi
     fi
 
-    kill -TERM "$pid" 2>/dev/null || true
+    if ! kill -TERM "$pid" 2>/dev/null; then
+      echo "failed: port $port listener pid $pid - could not send TERM, it may still be running" >&2
+      status=1
+      continue
+    fi
     waited=0
     while [ "$waited" -lt "$TERM_GRACE_SECONDS" ] && kill -0 "$pid" 2>/dev/null; do
       sleep 1
       waited=$((waited + 1))
     done
     if kill -0 "$pid" 2>/dev/null; then
-      kill -KILL "$pid" 2>/dev/null || true
-      echo "port $port: killed pid $pid (did not exit on TERM)"
+      if kill -KILL "$pid" 2>/dev/null; then
+        echo "port $port: killed pid $pid (did not exit on TERM)"
+      else
+        echo "failed: port $port listener pid $pid - could not send KILL after TERM grace, it may still be running" >&2
+        status=1
+      fi
     else
       echo "port $port: stopped pid $pid"
     fi
