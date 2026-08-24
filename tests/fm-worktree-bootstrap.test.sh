@@ -104,13 +104,13 @@ test_overwrites_stale_copy_but_deletes_nothing() {
 
 test_refuses_unsafe_declaration_paths() {
   local out rc
-  for bad in "/etc/passwd" "../escape"; do
+  for bad in "/etc/passwd" "../escape" "." "./"; do
     printf '%s\n' "$bad" > "$WT/.worktreeinclude"
     out=$(run_boot "$WT"); rc=$?
     [ "$rc" -ne 0 ] || fail "unsafe declaration path '$bad' must be refused, not acted on"
     assert_contains "$out" "refusing unsafe path" "a malformed declaration must name the offending entry"
   done
-  pass "bootstrap: refuses absolute and parent-relative declaration paths"
+  pass "bootstrap: refuses absolute, parent-relative, and clone-root declaration paths"
 }
 
 # Best-effort contract: a copy that cannot land is a stderr warning and exit 0,
@@ -129,6 +129,29 @@ test_copy_failure_warns_without_failing_the_task() {
   pass "bootstrap: a copy failure warns and the rest of the list proceeds"
 }
 
+# A declared directory that cannot be read (permissions, broken mount) must not
+# masquerade as a successful copy - the exact silent-miss this tool exists to
+# prevent. It stays best-effort: warn, count a failure, keep going.
+test_unreadable_declared_directory_warns_and_is_not_counted_copied() {
+  [ "$(id -u)" -eq 0 ] && { pass "bootstrap: unreadable-directory check needs a non-root runner"; return 0; }
+  rm -rf "$PROJ/state"
+  mkdir -p "$PROJ/state/d1"
+  printf 'unreadable-db\n' > "$PROJ/state/d1/main.sqlite"
+  printf 'orphan\n' > "$PROJ/.dev.vars"
+  printf '.dev.vars\nstate\n' > "$WT/.worktreeinclude"
+  chmod 000 "$PROJ/state"
+  local out rc
+  out=$(run_boot "$WT"); rc=$?
+  chmod 755 "$PROJ/state"
+  expect_code 0 "$rc" "an unreadable declared directory must stay best-effort exit 0"
+  assert_contains "$out" "warning:" "an unreadable declared directory must leave a stderr warning behind"
+  assert_contains "$out" "1 copy failures" "the summary must count an unreadable directory as a failure, not copied"
+  [ ! -e "$WT/state/d1/main.sqlite" ] || fail "nothing can be copied from an unreadable source directory"
+  [ "$(cat "$WT/.dev.vars" 2>/dev/null)" = orphan ] \
+    || fail "an unrelated entry must still be copied when another entry's source cannot be read"
+  pass "bootstrap: an unreadable declared directory warns instead of counting as copied"
+}
+
 test_no_project_clone_is_a_silent_noop
 test_missing_declaration_is_a_noop
 test_refuses_to_copy_onto_the_source_clone
@@ -137,5 +160,6 @@ test_absent_entry_is_skipped_silently_and_never_fails
 test_overwrites_stale_copy_but_deletes_nothing
 test_refuses_unsafe_declaration_paths
 test_copy_failure_warns_without_failing_the_task
+test_unreadable_declared_directory_warns_and_is_not_counted_copied
 
 echo "# all fm-worktree-bootstrap tests passed"

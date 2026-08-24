@@ -103,6 +103,12 @@ copy_entry() {  # <src-path> <dst-path> <declared-rel>
     fi
     return 0
   fi
+  local list ok=1 readable=1
+  list=$(mktemp "${TMPDIR:-/tmp}/fm-wt-boot.XXXXXX") || {
+    echo "warning: fm-worktree-bootstrap: could not create a scratch file for '$rel'" >&2
+    return 1
+  }
+  find -L "$src" -type f -print0 >"$list" 2>/dev/null || readable=0
   while IFS= read -r -d '' f; do
     # For a bare-file entry <dst> already names the destination file itself,
     # and find echoes exactly that source path; anything deeper keeps its
@@ -115,13 +121,22 @@ copy_entry() {  # <src-path> <dst-path> <declared-rel>
     destdir=$(dirname "$destfile")
     if ! mkdir -p "$destdir" 2>/dev/null; then
       echo "warning: fm-worktree-bootstrap: could not create directory $destdir for '$rel'" >&2
-      return 1
+      ok=0
+      break
     fi
     if ! cp -p "$f" "$destfile" 2>/dev/null; then
       echo "warning: fm-worktree-bootstrap: failed to copy '$f' of '$rel' into $dst" >&2
-      return 1
+      ok=0
+      break
     fi
-  done < <(find -L "$src" -type f -print0 2>/dev/null)
+  done <"$list"
+  rm -f "$list"
+  [ "$ok" -eq 1 ] || return 1
+  if [ "$readable" -eq 0 ]; then
+    echo "warning: fm-worktree-bootstrap: could not read '$src' of '$rel', nothing copied from it" >&2
+    return 1
+  fi
+  return 0
 }
 
 while IFS= read -r rel || [ -n "$rel" ]; do
@@ -131,6 +146,18 @@ while IFS= read -r rel || [ -n "$rel" ]; do
   case "$rel" in
     /*|*..*) die "refusing unsafe path in .worktreeinclude: $rel" ;;
   esac
+  norm=$rel
+  while :; do
+    case $norm in
+      ./*) norm=${norm#./} ;;
+      /) norm="" ;;
+      */) norm=${norm%/} ;;
+      *) break ;;
+    esac
+  done
+  if [ -z "$norm" ] || [ "$norm" = "." ]; then
+    die "refusing unsafe path in .worktreeinclude: $rel"
+  fi
 
   src="$SRC/$rel"
   dst="$WT/$rel"
