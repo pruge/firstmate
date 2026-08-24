@@ -67,3 +67,15 @@ Do not invoke the full Wayfinder-style workflow merely because a task exists. Pr
 3. Wayfinder + spec + tickets only when unresolved decisions can materially change the implementation.
 
 Likewise, ticket existence does not imply a separate review-agent call. Verification is specified per ticket and escalated according to the project's existing delivery mode and risk.
+
+## Verified integration points
+
+Source-audited against this repository:
+
+- **Discovery.** `.claude/skills` is a symlink to `.agents/skills`, so every harness that scans project skills sees `task-planning`; `metadata.internal: true` keeps it out of installer discovery. The behavioral load path is the AGENTS.md section 13 trigger - a running firstmate loads the skill only at that named trigger, now present in sections 7 and 13.
+- **Artifact lifecycle.** `bin/fm-teardown.sh` never removes `data/<task-id>/` wholesale (the scout `report.md` survives teardown), and `bin/fm-session-start.sh` reads only the backlog, `state/*.meta`, status tails, and named context files. A `plan/` subtree therefore survives teardown and stays invisible to startup digests.
+- **Parent/child identity.** The parent request is one ordinary task whose id owns `data/<id>/plan/`. Each ready ticket becomes its own Firstmate task with id `<parent-id>-t<TNN>` (valid per `fm_task_id_creation_valid`: `[A-Za-z0-9._-]`, at most 64 chars); its brief embeds the ticket content and points at the spec path.
+- **Dependency-aware dispatch.** Each ready ticket is filed as its own Queued backlog item with an explicit blocked-by note; the ordinary backlog re-evaluation after each teardown and heartbeat unlocks dependents. No new dispatch machinery is introduced.
+- **Risk-based verification.** A ticket's routine/elevated/critical level shapes evidence expectations inside the selected delivery path but never lowers a project's standing delivery posture; `no-mistakes-prod-only` classification still wins for product-facing work.
+
+Live intake tests (simple / planned / wayfinder-planned) against a real firstmate session remain the outstanding validation step before this PR leaves draft.

@@ -255,10 +255,12 @@ After approval, stop planning and return to Firstmate's existing execution path.
 For each ready ticket:
 
 1. resolve its concrete delivery mode and yolo posture using the existing Firstmate intake rules;
-2. create the normal `data/<ticket-id>/brief.md` with the ticket as the task description and its acceptance criteria/context;
+2. file the ticket as its own backlog work item and create the normal brief at `data/<parent-id>-t<TNN>/brief.md`, embedding the ticket content and pointing at `data/<parent-id>/plan/spec.md`;
 3. spawn the existing crewmate using `fm-spawn.sh` and the selected harness/profile;
 4. supervise through the existing lifecycle;
-5. unlock dependent tickets only after their declared predecessor is actually complete.
+5. unlock dependent tickets only after their declared predecessor is actually complete; filing tickets as separate backlog items with explicit blocked-by notes lets ordinary queue re-evaluation own this unlocking.
+
+The parent task id owns the plan artifacts; each ticket is an ordinary task whose id is `<parent-id>-t<TNN>` (valid per `fm_task_id_creation_valid`), so teardown, supervision, and merge authority apply per ticket unchanged.
 
 **Do not create a second dispatch system.** `task-planning` ends at an approved ticket graph; `fm-brief.sh`, `fm-spawn.sh`, supervision, delivery, and merge rules remain authoritative.
 
