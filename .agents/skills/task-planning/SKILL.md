@@ -279,7 +279,7 @@ The planner must not call an external review agent merely because a ticket exist
 This skill deliberately composes with, rather than replaces:
 
 - `diagnostic-reasoning` for bug causality and reproduction;
-- `decision-hold-lifecycle` / `captain-hold-lifecycle` for captain decisions;
+- `captain-hold-lifecycle` for captain decisions;
 - `project-management` for project lifecycle and delivery posture;
 - `quota-array-dispatch` and existing harness adapters for crew selection;
 - `fm-brief.sh` and `fm-spawn.sh` for actual execution.

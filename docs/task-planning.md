@@ -51,7 +51,7 @@ Planning artifacts live under `data/<task-id>/plan/` in the Firstmate home and a
 The planning skill composes with existing Firstmate procedures rather than replacing them:
 
 - `diagnostic-reasoning` remains authoritative for bug causality and reproduction.
-- `decision-hold-lifecycle` and `captain-hold-lifecycle` remain authoritative for unresolved decisions and approval.
+- `captain-hold-lifecycle` remains authoritative for unresolved decisions and approval.
 - `project-management` remains authoritative for project intake and delivery posture.
 - `harness-adapters` and `quota-array-dispatch` remain authoritative for crew runtime/model selection.
 - `fm-brief.sh` and `fm-spawn.sh` remain authoritative for implementation execution.
