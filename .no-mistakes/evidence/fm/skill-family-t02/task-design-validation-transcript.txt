@@ -1,0 +1,48 @@
+# task-design skill validation transcript (2026-08-24T13:10:27Z)
+branch fm/skill-family-t02, target commit 121ef7251807c759f0ea1670cc9f83c258327d8a
+
+## 1. Frontmatter parses with required fields
+{
+ "name": "task-design",
+ "description": "Design/prototype member of the planning family. Use when task-grill determines a design question exists, or whenever the captain asks to prototype or explore a design (\"prototype it\", \"design it\"). Builds a throwaway interactive artifact with Lavish so the captain answers one question by driving the thing instead of reading prose.",
+ "user-invocable": false,
+ "metadata": {
+  "internal": true
+ }
+}
+
+## 2. Acceptance criteria markers
+7:user-invocable: false
+9:  internal: true
+-- trigger: grill mandatory + captain invocation
+19:Run this skill whenever `task-grill` determines a design question exists; all non-Simple planning work passes through grill, so this step is mandatory there.
+20:The captain may also invoke it at any time by asking for a prototype or a design exploration.
+-- question branches
+28:- "Does this logic or state model feel right?" - build ONE interactive HTML demo that pushes the state model through the hard cases.
+29:- "What should this look like?" - build several radically different UI variants, comparable side by side.
+-- Lavish contract (design/ location, lavish-axi open, foreground poll)
+35:Put every prototype under `projects/<project>/docs/features/<feature-slug>/design/`, beside the spec and tickets it feeds.
+56:Open the finished file with `lavish-axi <file>`, then keep `lavish-axi poll <file>` running in the foreground until the captain annotates, chooses, or ends the session.
+-- five inherited rules
+1. Clearly marked throwaway - name and header say prototype, so nothing lands in production by accident.
+2. Trivially runnable - opening the file is the entire setup.
+3. No persistence by default - state lives in memory, and only a persistence-shaped question touches a scratch store named for wiping.
+4. Skip polish - no tests, no error handling beyond what keeps it runnable, no abstractions; learning speed is the point.
+5. Surface the state - show the full relevant state after every action or variant switch.
+-- retention with graduation condition
+71:Prototypes stay as uncommitted working documents under `design/`, like the family's other planning artifacts.
+73:Only validated decision snippets graduate into `spec.md` - a reducer signature, a state list, a winning variant's structural choice - and the demo stays behind in `design/`.
+-- verdict recording
+77:Record the question and its answer in `grill.md`'s decision log, or in the spec's Decisions section once that spec exists.
+
+## 3. Style rules
+line count:       84 (target 50-100)
+multi-sentence lines: 0
+em dash present: 0
+
+## 4. Verbatim-copy check vs MIT originals (SKILL.md+LOGIC.md+UI.md)
+7-gram overlap: 7 shared 7-word windows, all generic rule-name fragments; no full sentence copied
+
+## 5. Owner-contract amendments (exact user-approved wording)
+1
+1
