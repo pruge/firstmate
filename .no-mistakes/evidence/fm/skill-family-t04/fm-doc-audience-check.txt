@@ -1,0 +1,4 @@
+# fm-doc-audience-check.sh on branch fm/skill-family-t04 (target 4ef7293)
+$ bash bin/fm-doc-audience-check.sh
+fm-doc-audience-check: ok surfaces=77 local_links=266
+exit=0
