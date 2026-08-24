@@ -1,0 +1,29 @@
+Manual verification: bin/fm-kill-port.sh review fix F4 - honest outcome labels when
+a TERM/KILL signal send fails. Both failure branches driven end-to-end through the
+real command line against real TCP listeners; a shell function named `kill`
+simulates a permission-denied send (returns 1 for one verb) while delegating all
+other invocations to /bin/kill.
+
+== Case A: TERM send fails (simulated EPERM), python3 http.server listener ==
+caseA exit=1
+failed: port 64993 listener pid 90031 - could not send TERM, it may still be running
+listener-after=yes
+
+Contract held: non-zero exit, "failed:" label instead of a false "stopped",
+listener left running (no deletion path taken on a failed kill).
+The normal paths around it are covered by tests/fm-kill-port.test.sh
+(stop/killed/no-listener/refusal messages and exit codes all green).
+
+== Case B: TERM delivered but ignored by a TERM-immune python listener,
+   grace expires, KILL send fails (simulated EPERM) ==
+TERM-immune listener pid=90927 port=64994 up=yes
+caseB exit=1
+failed: port 64994 listener pid 90927 - could not send KILL after TERM grace, it may still be running
+listener-after=yes
+
+Contract held: the script did not print "killed pid" for a process that
+survived; exit 1; listener still up.
+
+Result: PASS - both signal-send failures now report honestly with non-zero
+exit while every existing message format (stopped/killed/no listener/
+refusal) remains unchanged in the passing suite.

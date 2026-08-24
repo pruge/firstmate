@@ -1,0 +1,30 @@
+Manual verification: bin/fm-worktree-bootstrap.sh review fixes F1 (symlink entries
+copied by content) and F2 (.worktreeinclude final line kept without trailing newline).
+
+Fixture: fake FM_HOME with projects/myapp clone containing:
+  - .dev.vars            -> symlink to secrets/dev.vars (content SECRET=via-symlink)
+  - secrets/dev.vars     (regular file, the symlink target)
+  - state/v3/d1/main.sqlite        (regular file, real-db)
+  - state/v3/d1/link.sqlite        -> absolute symlink OUTSIDE the clone (linked-db)
+Dev material left untracked; only a README is committed so the worktree
+checkout starts clean (no pre-existing destinations).
+
+.worktreeinclude written WITHOUT a trailing newline:
+  '.dev.vars\nstate\nstate/v3/d1/link.sqlite'   <- last line has no \n
+
+Command: FM_HOME=<fake home> bin/fm-worktree-bootstrap.sh <worktree>
+
+--- actual output ---
+exit=0
+[fm-worktree-bootstrap] from: /private/var/folders/.../home/projects/myapp
+[fm-worktree-bootstrap] into: /private/var/folders/.../pool/myapp
+[fm-worktree-bootstrap] done - 3 entries copied, 0 absent in the project clone, 0 copy failures (warnings above)
+---
+.dev.vars -> SECRET=via-symlink          (F1: symlink-to-file copied BY CONTENT)
+main.sqlite -> real-db                   (declared directory traversed)
+link.sqlite -> linked-db                 (symlink inside declared dir copied by content)
+dest .dev.vars: REGULAR-FILE             (content copied, not a dangling link)
+
+Result: PASS - exit 0, all 3 entries counted copied, no warnings,
+all destinations hold the source content despite symlinks and a missing
+trailing newline in the declaration.
