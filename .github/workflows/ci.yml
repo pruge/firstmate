@@ -57,10 +57,15 @@ jobs:
   # check results would need permissions beyond contents: read. Any commit this
   # pattern does not confidently recognize prints verified=false and falls back
   # to the full suite; skipping CI requires a confident match.
+  # The job also runs (always judging false) on pull_request events: GitHub
+  # Actions auto-skips every dependent of a skipped job even when that
+  # dependent's own if is true, so letting this job be skipped on PRs would
+  # silence every behavior lane there. Running it keeps its conclusion an
+  # explicit false instead of a contagious skip.
   verified-merge:
     name: Detect verified PR merge
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     outputs:
       verified: ${{ steps.judge.outputs.verified }}
     steps:
@@ -68,7 +73,15 @@ jobs:
       - id: judge
         env:
           FM_HEAD_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
-        run: bin/fm-ci-verified-merge.sh >>"$GITHUB_OUTPUT"
+        run: |
+          set -eu
+          if [ "$GITHUB_EVENT_NAME" != "push" ]; then
+            # Pull_request events have no head_commit to judge, and a lane skip
+            # must never propagate downstream: judge false explicitly.
+            echo "verified=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          bin/fm-ci-verified-merge.sh >>"$GITHUB_OUTPUT"
 
   lint:
     name: Lint
