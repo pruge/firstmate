@@ -68,7 +68,8 @@ Current `lavish-axi --help` owns the exact poll, annotation, and session-end mec
 
 ## Retention and graduation
 
-Prototypes stay as uncommitted working documents under `design/`, like the family's other planning artifacts.
+Prototypes stay uncommitted throwaway artifacts under `design/`.
+Unlike `grill.md`, `spec.md`, and `tickets/`, which firstmate commits and pushes at planning completion, a prototype is deliberately left out of that commit - it exists to answer one question and be discarded, not to become project history.
 Never treat a demo itself as deliverable code or move it wholesale into spec or implementation.
 Only validated decision snippets graduate into `spec.md` - a reducer signature, a state list, a winning variant's structural choice - and the demo stays behind in `design/`.
 

@@ -92,7 +92,8 @@ projects/<project>/docs/features/<feature-slug>/
 
 These documents live with their project so the captain can browse every planned or running feature per project in one place, and firstmate reads them back at intake and at dispatch.
 Writing the planning documents and design prototypes described here is hard rule 1's enumerated `task-planning` exception; nothing else under `projects/` is authorized.
-Leave them uncommitted working documents by default - versioning them into the repository happens only through the project's normal delivery path when the captain asks.
+Design prototypes stay uncommitted throwaway artifacts - `task-design` owns that boundary.
+The written plan itself is not left uncommitted: at planning completion firstmate commits and pushes it into the project repository per "Versioning the approved plan".
 
 Record the `<project>:<feature-slug>` pair in the parent task's backlog note so runtime state stays linked to the documents.
 
@@ -378,6 +379,28 @@ Then use Firstmate's existing decision/captain hold lifecycle for approval when 
 A captain approval of the plan authorizes implementation of the approved ticket graph only.
 It does not grant merge authority or override other Firstmate hard rules.
 
+### Versioning the approved plan
+
+Planning completion is the moment the captain approves the ticket graph, and it fires exactly one extra step before dispatch handoff: versioning the approved plan into the project repository so every crew's worktree can see it.
+
+Firstmate commits and pushes the planning documents itself.
+Hard rule 1's exception covers exactly this: the `grill.md`, `wayfinder.md` when present, `spec.md`, and `tickets/` under the feature directory, and nothing else under `projects/`.
+Never sweep project code, config, or the project's `AGENTS.md` into the commit; force, stash, discarding unlanded work, and merge authority stay governed by their own boundaries.
+
+Commit from a disposable git worktree of the project rather than the primary clone, so the primary clone stays clean on its default branch for guarded fleet sync:
+
+```text
+git -C projects/<project> worktree add <tmp-dir-outside-projects> -b fm/planning-docs-<feature-slug>
+copy docs/features/<feature-slug>/ into <tmp-dir>/docs/features/
+commit, push the branch, open the PR through the project's selected delivery mode
+git -C projects/<project> worktree remove <tmp-dir>
+```
+
+Merge authority follows the project's ordinary posture.
+Once merged, fleet sync brings the documents back into the primary clone as tracked files, so ticket briefs stop needing hand-carried paths and recurring dirty-clone sync reports disappear.
+Implementation tickets may still file and dispatch while that PR awaits merge; their briefs point at the primary-clone spec path as usual.
+A later grill round that revises the documents repeats the same commit-and-push from a fresh disposable worktree.
+
 ## 10. Recursion gate at dispatch
 
 Re-judge the section 2 complexity gate at EVERY dispatch, not only at intake.
@@ -390,7 +413,7 @@ Dispatching an overgrown ticket anyway is precisely the failure this gate exists
 
 ## 11. Hand off to Firstmate execution
 
-After approval, stop planning and return to Firstmate's existing execution path.
+After approval, fire the versioning step above, then return to Firstmate's existing execution path.
 
 For each ready ticket:
 
