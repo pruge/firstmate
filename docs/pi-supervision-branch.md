@@ -46,7 +46,7 @@ Stage one is unchanged: the bash watcher absorbs everything provably fine at zer
 Stage two is the branch's verdict on each handled event, reported through its `fm_branch_report` tool: `routine` merges without a follow-up turn, while `captain` merges with exactly one follow-up turn.
 The follow-up turn a `captain` verdict opens is itself the captain-visible outcome, so its merge note is delivered silently and never printed or rendered in Pi.
 A no-change heartbeat outcome explicitly reported with `task=fleet` and `silent=true` is also delivered silently with no rendered note, while every other `routine` outcome stays rendered with its sailboat prefix.
-The verdict criteria in the branch prompt mirror the captain-etiquette escalation list; doubt escalates.
+The verdict criteria in the branch prompt mirror the captain-etiquette escalation list, plus one addition that list has no reason to carry: an outcome only MAIN can finish because the branch's role limits forbid it - a PR ready to merge, a local-only landing ready to approve, a new task that needs spawning - reports captain, since reporting it routine would leave it actionable by nobody; doubt escalates.
 Main can read the durable outcome store on demand through its `fm_branch_outcomes` tool.
 
 ## Heartbeat routing
