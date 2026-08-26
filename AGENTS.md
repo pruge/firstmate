@@ -232,6 +232,9 @@ A restart must be a non-event because durable state and live backend inventory, 
 
 ## 6. Project and knowledge management
 
+Read a registered project's code through `bin/fm-project.sh <project> <verb>`, never by calling `codegraph` directly: the door refreshes the structural index before answering, and a raw call can answer a real symbol with an empty result while reporting nothing stale.
+Its header owns the verb list and the resolution order.
+
 Load `project-management` before adding, creating, removing, or initializing a project.
 Cloning or registering a project is add intake and uses the same trigger.
 That skill owns registry syntax, delivery-mode selection, outward-facing consent, clone and initialization procedure, safe rollback, and removal preflight.

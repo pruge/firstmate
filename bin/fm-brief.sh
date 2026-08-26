@@ -50,11 +50,12 @@
 # "Delivery contract: mode=<mode>" line. bin/fm-spawn.sh reads that line and refuses
 # to launch a ship task whose explicit --mode disagrees, so an adjusted brief and the
 # recorded task metadata cannot drift apart.
-# Ship and scout scaffolds carry a standing CodeGraph usage contract: index
-# init/sync at start, structure queries over grep, sync after each edit batch,
-# affected-based test selection before done, a learning loop into the project's
-# docs/agents/codegraph/README.md with an AGENTS.md pointer, and a one-line note
-# to continue without codegraph when the binary is missing.
+# Ship and scout scaffolds carry a standing code-reading contract: every
+# structural read goes through bin/fm-project.sh (which refreshes the CodeGraph
+# index before answering) rather than a raw codegraph call, text questions go to
+# its grep/read verbs, affected-based test selection runs before done, a one-line
+# note covers an unavailable index, and the crewmate reports back what the door
+# did well and badly so it can be tuned from evidence.
 # They also carry a standing test-selection contract: no full-suite first run,
 # changed-first selection (fm-test-run.sh --changed here, the project runner's
 # native equivalent elsewhere), failed-family-only reruns, GitHub CI as the PR
@@ -363,19 +364,43 @@ EOF
 HERDR_SECTION=${HERDR_SECTION%$'\n'}
 fi
 
-# Standing CodeGraph usage contract shared by the ship and scout scaffolds.
-# shellcheck disable=SC2016  # single quotes are deliberate: backtick-wrapped command names must reach the reading agent verbatim, not expand at scaffold time; only the '"$FM_ROOT"' break-out interpolates.
+# Standing code-reading contract shared by the ship and scout scaffolds.
+# Every structural read goes through bin/fm-project.sh, which refreshes the
+# CodeGraph index before answering. A raw codegraph call can answer from a stale
+# index that reports nothing pending, so a missing symbol reads as absent code -
+# the exact silent failure this indirection removes.
+FM_PROJECT_HELPER=$(shell_quote "$FM_ROOT/bin/fm-project.sh")
+# shellcheck disable=SC2016  # single quotes are deliberate: backtick-wrapped command names must reach the reading agent verbatim, not expand at scaffold time; only the '"$FM_PROJECT_HELPER"' and '"$REPO"' break-outs interpolate.
 CODEGRAPH_SECTION=$(printf '%s\n' \
-'# CodeGraph usage contract' \
-'This repo may carry a CodeGraph structural index; use it consistently when it exists.' \
-'1. At task start, run `codegraph status` in this worktree.' \
-'   If `.codegraph/` is absent, run `codegraph init`; if present, run `codegraph sync`.' \
-'2. Structure questions (call paths, blast radius, symbol lookup) go through `codegraph explore`, `node`, `callers`, `callees`, or `impact`, not grep.' \
-'3. Run `codegraph sync` after each edit batch: the index does not follow edits automatically and silently goes stale, so a stale `No results found` is NOT proof that code is absent.' \
-'4. Before reporting done, run `codegraph affected` on your changed files to select which tests to run.' \
-'5. Learning loop: append useful query patterns, keywords, and per-area symbol maps discovered during the task to `docs/agents/codegraph/README.md` (create it if missing).' \
-"   Keep an \`AGENTS.md\` pointer section to that file via '$FM_ROOT/bin/fm-ensure-agents-md.sh .'" \
-'If the `codegraph` binary is missing, append one status line noting it and continue with ordinary tools; nothing else changes.')
+'# Reading this codebase' \
+'Read structure through the project door, never by calling `codegraph` directly:' \
+'' \
+'    PROJECT='"$FM_PROJECT_HELPER"' && P() { "$PROJECT" '"$REPO"' "$@"; }' \
+'' \
+'It answers about the checkout you are standing in, and it refreshes the index before every answer.' \
+'That refresh is the whole point: the index does not follow edits or checkouts, and a stale one answers a real symbol with `No results found` while reporting nothing pending.' \
+'A raw `codegraph` call skips that refresh, so an empty result there is NOT evidence the code is absent.' \
+'' \
+'Structure questions - who calls this, what breaks if I change it, where is this symbol:' \
+'' \
+'    P explore <topic>      P node <symbol>        P query <symbol>' \
+'    P callers <symbol>     P callees <symbol>     P impact <symbol>' \
+'' \
+'Text questions - comments, prose, config keys, string literals. These are not symbols, and the index answers them with a confident nothing:' \
+'' \
+'    P grep <pattern> [path]        P read <path>' \
+'' \
+'Before reporting done, run `P affected <changed files>` to choose which tests to run.' \
+'If `P status` reports the index unavailable, say so in one status line and continue with ordinary tools; nothing else changes.' \
+'' \
+'## Report how this worked' \
+'This door is new and is being tuned from crew evidence, so your experience is a deliverable, not a courtesy.' \
+'Before you finish, append a short `## Reading this codebase` section to your PR body (or to your report, for a scout) covering:' \
+'- which verbs actually earned their keep, and which you never reached for;' \
+'- any question you had to answer with plain `grep`/file reading because the index could not, and what that question was;' \
+'- anything it answered wrongly, emptily, or slower than reading the file directly;' \
+'- one concrete change that would have saved you time.' \
+'Be specific and negative where warranted - "it worked fine" teaches nothing and a vague endorsement is worse than silence.')
 
 # Standing test-selection contract shared by the ship and scout scaffolds.
 # shellcheck disable=SC2016  # single quotes are deliberate: backtick-wrapped command names must reach the reading agent verbatim, not expand at scaffold time.
