@@ -1220,6 +1220,138 @@ fm_wake_secondmate_stall_receipt_write() { # <task> <row-key>
   fi
 }
 
+# Secondmate wake-loop stall thresholds resolve per mate on every poll.
+# An explicit FM_SECONDMATE_WAKE_STALL_SECS environment value wins unchanged,
+# then a config/secondmate-wake-stall-secs file (one integer, whitespace
+# trimmed) pins this home's threshold and disables adaptation, and with neither
+# set the threshold adapts to each mate's observed foreign-row handling latency:
+# the stall factor times the worst of the most recent latency samples, clamped
+# to FM_SECONDMATE_WAKE_STALL_MIN_SECS..FM_SECONDMATE_WAKE_STALL_MAX_SECS. With
+# no samples yet the clamp floor applies, which preserves the historical
+# 60-second default until this home has observed its own pace. Samples and the
+# last-seen row marker are durable state under STATE, so learning survives
+# watcher restarts, and everything is keyed per mate so one slow home never
+# moves another home's threshold.
+FM_SECONDMATE_WAKE_STALL_FACTOR=${FM_SECONDMATE_WAKE_STALL_FACTOR:-2}
+FM_SECONDMATE_WAKE_STALL_MIN_SECS=${FM_SECONDMATE_WAKE_STALL_MIN_SECS:-60}
+FM_SECONDMATE_WAKE_STALL_MAX_SECS=${FM_SECONDMATE_WAKE_STALL_MAX_SECS:-900}
+FM_SECONDMATE_WAKE_STALL_SAMPLES=${FM_SECONDMATE_WAKE_STALL_SAMPLES:-10}
+
+fm_secondmate_stall_env_secs() { # -> prints the explicit env value, empty when unset or invalid
+  local v=${FM_SECONDMATE_WAKE_STALL_SECS:-}
+  case "$v" in ''|*[!0-9]*|0) return 0 ;; esac
+  printf '%s\n' "$v"
+}
+
+fm_secondmate_stall_config_secs() { # -> prints a pinned value from config/secondmate-wake-stall-secs, empty when absent or invalid
+  local file="$FM_HOME/config/secondmate-wake-stall-secs" value
+  [ -f "$file" ] && [ ! -L "$file" ] || return 0
+  value=$(tr -d '[:space:]' < "$file" 2>/dev/null || true)
+  case "$value" in ''|*[!0-9]*|0) return 0 ;; esac
+  printf '%s\n' "$value"
+}
+
+fm_secondmate_stall_adaptive_secs() { # <task> -> prints the adaptive threshold seconds
+  local task=$1 file min max factor keep
+  case "$task" in ''|*[!A-Za-z0-9._-]*) printf '60\n'; return 0 ;; esac
+  min=$FM_SECONDMATE_WAKE_STALL_MIN_SECS
+  case "$min" in ''|*[!0-9]*|0) min=60 ;; esac
+  max=$FM_SECONDMATE_WAKE_STALL_MAX_SECS
+  case "$max" in ''|*[!0-9]*|0) max=900 ;; esac
+  factor=$FM_SECONDMATE_WAKE_STALL_FACTOR
+  case "$factor" in ''|*[!0-9]*|0) factor=2 ;; esac
+  keep=$FM_SECONDMATE_WAKE_STALL_SAMPLES
+  case "$keep" in ''|*[!0-9]*|0) keep=10 ;; esac
+  file="$STATE/.secondmate-wake-stall-latency-$task"
+  awk -v min="$min" -v max="$max" -v factor="$factor" -v keep="$keep" '
+    $1 ~ /^[0-9]+$/ { sample[NR % keep] = $1 + 0 }
+    END {
+      worst = 0
+      for (i = 0; i < keep; i++) if (sample[i] + 0 > worst) worst = sample[i] + 0
+      t = worst * factor
+      if (t < min) t = min
+      if (t > max) t = max
+      print t
+    }
+  ' "$file" 2>/dev/null || printf '60\n'
+}
+
+fm_secondmate_stall_threshold() { # <task> -> prints this home's effective stall seconds for <task>
+  local task=$1 pinned
+  pinned=$(fm_secondmate_stall_env_secs)
+  [ -n "$pinned" ] || pinned=$(fm_secondmate_stall_config_secs)
+  if [ -n "$pinned" ]; then
+    printf '%s\n' "$pinned"
+    return 0
+  fi
+  fm_secondmate_stall_adaptive_secs "$task"
+}
+
+fm_wake_secondmate_stall_seen_write() { # <task> <row-key>
+  local task=$1 row_key=$2 seen tmp
+  case "$task" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
+  case "$row_key" in ''|*[!0-9-]*) return 1 ;; esac
+  seen="$STATE/.secondmate-wake-stall-seen-$task"
+  if [ -e "$seen" ] || [ -L "$seen" ]; then
+    [ -f "$seen" ] && [ ! -L "$seen" ] || return 1
+  fi
+  tmp=$(mktemp "$STATE/.secondmate-wake-stall.XXXXXX") || return 1
+  if ! printf '%s\n' "$row_key" > "$tmp" || ! chmod 0600 "$tmp" \
+    || ! _fm_atomic_replace "$tmp" "$seen"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+}
+
+fm_wake_secondmate_stall_latency_append() { # <task> <secs>
+  local task=$1 secs=$2 keep file tmp
+  case "$task" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
+  case "$secs" in ''|*[!0-9]*) return 1 ;; esac
+  keep=$FM_SECONDMATE_WAKE_STALL_SAMPLES
+  case "$keep" in ''|*[!0-9]*|0) keep=10 ;; esac
+  file="$STATE/.secondmate-wake-stall-latency-$task"
+  if [ -e "$file" ] || [ -L "$file" ]; then
+    [ -f "$file" ] && [ ! -L "$file" ] || return 1
+  fi
+  tmp=$(mktemp "$STATE/.secondmate-wake-stall.XXXXXX") || return 1
+  if ! { [ -f "$file" ] && cat "$file"; printf '%s\n' "$secs"; } | tail -n "$keep" > "$tmp" \
+    || ! chmod 0600 "$tmp" \
+    || ! _fm_atomic_replace "$tmp" "$file"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+}
+
+# Observe one poll of a mate's oldest foreign row. When the previously seen
+# oldest row is gone, the mate consumed it, so now minus that row's queue epoch
+# is one handling-latency sample; samples above the clamp maximum are discarded
+# so watcher downtime or an already-alerted wedge cannot poison the learned
+# baseline. The first sighting of a row only records it as seen.
+fm_secondmate_stall_observe() { # <task> <epoch> <seq> <now>
+  local task=$1 epoch=$2 seq=$3 now=$4 key seen prev_key prev_epoch max sample
+  case "$task" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
+  case "$epoch" in ''|*[!0-9]*) return 1 ;; esac
+  case "$seq" in ''|*[!0-9]*) return 1 ;; esac
+  case "$now" in ''|*[!0-9]*) return 1 ;; esac
+  key="$epoch-$seq"
+  seen="$STATE/.secondmate-wake-stall-seen-$task"
+  prev_key=$(cat "$seen" 2>/dev/null || true)
+  if [ -n "$prev_key" ] && [ "$prev_key" != "$key" ]; then
+    prev_epoch=${prev_key%-*}
+    case "$prev_epoch" in ''|*[!0-9]*) prev_epoch='' ;; esac
+    if [ -n "$prev_epoch" ]; then
+      max=$FM_SECONDMATE_WAKE_STALL_MAX_SECS
+      case "$max" in ''|*[!0-9]*|0) max=900 ;; esac
+      sample=$((now - prev_epoch))
+      if [ "$sample" -gt 0 ] && [ "$sample" -le "$max" ]; then
+        fm_wake_secondmate_stall_latency_append "$task" "$sample" || return 1
+      fi
+    fi
+  fi
+  [ "$(cat "$seen" 2>/dev/null || true)" = "$key" ] \
+    || fm_wake_secondmate_stall_seen_write "$task" "$key" || return 1
+}
+
 fm_wake_commit_secondmate_stall_receipts_through() { # <cutoff>
   local cutoff=$1 key seq rest epoch task row_key
   while IFS= read -r key; do
