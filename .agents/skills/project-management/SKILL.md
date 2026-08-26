@@ -59,6 +59,7 @@ Clone into `projects/<name>` and add the registry entry only after the destinati
 A `no-mistakes` or `no-mistakes-prod-only` project must have an `origin` remote and must complete the initialization procedure below, because a conditional policy's product-facing work runs the pipeline while its internal-only work still takes the direct PR.
 A `direct-PR` project needs an `origin` remote but skips no-mistakes initialization.
 A `local-only` project may have no remote and skips no-mistakes initialization.
+After the registry entry lands, run the project memory check below.
 
 ## Create a project
 
@@ -66,9 +67,20 @@ Creating a GitHub repository is outward-facing.
 Before making that remote change, propose the repository name, owner or organization, visibility, and delivery posture, defaulting visibility to private and the posture to `no-mistakes-prod-only`, then obtain the captain's explicit consent for those exact values; a stated default never replaces that consent.
 Use `gh-axi` for the approved GitHub operation and consult its current help rather than relying on remembered flags.
 After remote creation succeeds, clone it locally, add the registry entry, and initialize it according to its delivery posture.
+Then run the project memory check below.
 
 For a purely `local-only` project, create a local Git repository under its unused `projects/<name>` path, add the registry entry, and make no GitHub call.
 The captain's request to create that local project authorizes this local initialization, but it does not authorize an unmentioned remote repository.
+Then run the project memory check below.
+
+## Project memory check
+
+Once a registration finishes - added or cloned project, remotely created project cloned locally, or purely `local-only` creation - check whether the repository root contains an `AGENTS.md` or a `CLAUDE.md`.
+If either exists, the project passes this check and nothing happens.
+If neither exists, raise a work item that creates one through the project's selected delivery path; every delivery mode takes this step, including `local-only` projects on their approved local fast-forward landing path.
+That worker task runs `bin/fm-ensure-agents-md.sh` for the skeleton and points at existing authoritative documents, such as an existing build or validation guide, instead of copying their content into the new file.
+`AGENTS.md` section 6 owns the boundary this step follows: firstmate never writes a project's `AGENTS.md` itself, which is why the gap becomes dispatched work instead of a direct edit.
+The registration itself never blocks or fails on this check: finish registering first, then raise the follow-up, and treat a missing memory file as queued work rather than an error.
 
 ## Initialize
 
