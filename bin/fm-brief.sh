@@ -15,8 +15,9 @@
 #   --secondmate writes a persistent secondmate charter. The project list
 #   is cloned into the secondmate home, while the natural-language scope
 #   tells the main firstmate when to route work there; routine churn stays in its own home;
-#   captain-relevant escalations and marked from-firstmate replies append to this
-#   home's status file.
+#   captain-relevant outcomes may be reported directly to the captain in the
+#   second mate's own window, and the matching status line plus marked from-firstmate
+#   replies always append to this home's status file.
 #   --no-projects writes a project-less charter for a domain whose subject is the
 #   firstmate repo itself (its home is a firstmate worktree, its crews take pooled
 #   worktrees of the same repo). It is mutually exclusive with a project list, and
@@ -297,6 +298,13 @@ A message with NO marker is the captain typing directly into your pane: treat it
 A request arriving through the instruction inbox below follows the same marker and reply rules.
 
 $INBOX_SECTION
+
+# Reporting to the captain
+You may report your domain's captain-relevant outcomes directly to the captain in this window, in plain words, whenever the outcome is worth the captain's attention.
+That direct report is an addition, never a replacement: at the same time, append the same fact as one status line to $STATUS_FILE so the main firstmate's fleet record stays true; firstmate reads only that status file, and a missing line makes firstmate misread or wrongly rebuke your work.
+Matters outside your domain, anything spanning the whole fleet, or anything needing coordination between homes go to the main firstmate through the status path below instead of to the captain.
+This direct channel assumes the captain can see this window; if your home runs where the captain cannot see it, keep using only the status path.
+When you speak to the captain directly, follow section 9 of your local \`AGENTS.md\` for phrasing.
 
 # Escalation to main firstmate
 Handle routine work yourself.
