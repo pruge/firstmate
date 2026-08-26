@@ -285,6 +285,54 @@
       "audience": "operator-example"
     },
     {
+      "path": "docs/features/planning-skill-family/grill.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/features/planning-skill-family/spec.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/features/planning-skill-family/tickets/T01.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/features/planning-skill-family/tickets/T02.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/features/planning-skill-family/tickets/T03.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/features/planning-skill-family/tickets/T04.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/features/planning-skill-family/tickets/T05.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/features/runtime-provisioning/grill.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/features/runtime-provisioning/spec.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/features/runtime-provisioning/tickets/T01.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/features/runtime-provisioning/tickets/T02.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/features/runtime-provisioning/tickets/T03.md",
+      "audience": "maintainer-architecture"
+    },
+    {
       "path": "docs/fm-test-isolation-proof.md",
       "audience": "maintainer-verification"
     },
