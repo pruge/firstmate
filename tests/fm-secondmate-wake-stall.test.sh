@@ -145,9 +145,9 @@ test_config_file_pins_threshold_and_falls_back_when_invalid() {
 # Shared checkpoint fixture: a parent home with one endpoint-recorded local mate
 # whose queue holds one aged row. Prints nothing on success; callers assert on
 # the checkpoint output.
-run_stall_checkpoint() {  # <dir> <state> <sub> <queue-epoch> <seq> <extra-env...>
-  local dir=$1 state=$2 sub=$3 epoch=$4 seq=$5 fakebin out
-  shift 5
+run_stall_checkpoint() {  # <dir> <state> <sub> <extra-env...>
+  local dir=$1 state=$2 sub=$3 fakebin out
+  shift 3
   fakebin="$dir/fakebin"
   cat > "$fakebin/tmux" <<'SH'
 #!/usr/bin/env bash
@@ -193,7 +193,7 @@ test_replay_of_false_alarm_evidence_no_longer_alarms_but_wedges_do() {
   for age in 62 64 66 70 71 72 75 76 78 78 109 113 114; do
     printf '%s\t7\tcheck\trouted\tcheck: routed row\n' "$(( $(date +%s) - age ))" \
       > "$sub/state/.wake-queue"
-    out=$(run_stall_checkpoint "$dir" "$state" "$sub" 0 7)
+    out=$(run_stall_checkpoint "$dir" "$state" "$sub")
     if grep -F 'secondmate wake-loop stalled' "$out" >/dev/null 2>&1; then
       fail "replayed evidence age ${age}s produced a false alarm"
     fi
@@ -201,14 +201,14 @@ test_replay_of_false_alarm_evidence_no_longer_alarms_but_wedges_do() {
   # A genuine wedge is minutes long: past the 228s learned threshold it alarms.
   printf '%s\t7\tcheck\trouted\tcheck: routed row\n' "$(( $(date +%s) - 600 ))" \
     > "$sub/state/.wake-queue"
-  out=$(run_stall_checkpoint "$dir" "$state" "$sub" 0 7)
+  out=$(run_stall_checkpoint "$dir" "$state" "$sub")
   grep -F 'secondmate wake-loop stalled: mate=mate row=7' "$out" >/dev/null \
     || fail "a genuine 600s wedge did not alarm above the learned threshold"
   pass "the thirteen observed false-alarm ages stay silent while a genuine wedge still alarms"
 }
 
 test_config_knob_applies_on_next_watch_cycle_without_restart() {
-  local dir state sub out before after
+  local dir state sub out before
   dir=$(make_mate_fixture stall-config-live)
   state="$dir/state"
   sub="$dir/secondmate"
@@ -216,7 +216,7 @@ test_config_knob_applies_on_next_watch_cycle_without_restart() {
   # alarms on a 90s-old row.
   printf '%s\t7\tcheck\trouted\tcheck: routed row\n' "$(( $(date +%s) - 90 ))" \
     > "$sub/state/.wake-queue"
-  out=$(run_stall_checkpoint "$dir" "$state" "$sub" 0 7)
+  out=$(run_stall_checkpoint "$dir" "$state" "$sub")
   before=$(cat "$out")
   grep -F 'secondmate wake-loop stalled: mate=mate row=7' "$out" >/dev/null \
     || fail "baseline cycle did not alarm under the historical default: $before"
@@ -228,7 +228,7 @@ test_config_knob_applies_on_next_watch_cycle_without_restart() {
   printf '300\n' > "$dir/config/secondmate-wake-stall-secs"
   printf '%s\t9\tcheck\trouted\tcheck: routed row\n' "$(( $(date +%s) - 90 ))" \
     > "$sub/state/.wake-queue"
-  out=$(run_stall_checkpoint "$dir" "$state" "$sub" 0 9)
+  out=$(run_stall_checkpoint "$dir" "$state" "$sub")
   if grep -F 'secondmate wake-loop stalled' "$out" >/dev/null 2>&1; then
     fail "the dropped config knob did not take effect on the next watcher cycle"
   fi
@@ -262,7 +262,7 @@ test_threshold_change_is_visible_in_tick_behavior_via_env_too() {
   sub="$dir/secondmate"
   printf '%s\t7\tcheck\trouted\tcheck: routed row\n' "$(( $(date +%s) - 90 ))" \
     > "$sub/state/.wake-queue"
-  out=$(run_stall_checkpoint "$dir" "$state" "$sub" 0 7 FM_SECONDMATE_WAKE_STALL_SECS=300)
+  out=$(run_stall_checkpoint "$dir" "$state" "$sub" FM_SECONDMATE_WAKE_STALL_SECS=300)
   if grep -F 'secondmate wake-loop stalled' "$out" >/dev/null 2>&1; then
     fail "an explicit env override did not suppress a below-threshold row"
   fi
@@ -277,7 +277,7 @@ test_empty_queue_clears_seen_row_but_keeps_learning() {
   printf '100\n110\n' > "$state/.secondmate-wake-stall-latency-mate"
   printf '%s\t7\tcheck\trouted\tcheck: routed row\n' "$(( $(date +%s) - 300 ))" \
     > "$sub/state/.wake-queue"
-  out=$(run_stall_checkpoint "$dir" "$state" "$sub" 0 7)
+  out=$(run_stall_checkpoint "$dir" "$state" "$sub")
   grep -F 'secondmate wake-loop stalled' "$out" >/dev/null \
     || fail "fixture did not alarm before the empty-queue leg"
   [ -f "$state/.secondmate-wake-stall-seen-mate" ] \
@@ -287,7 +287,7 @@ test_empty_queue_clears_seen_row_but_keeps_learning() {
   # The queue empties: marker, receipts, and the seen row clear, but the
   # learned latency history must survive so an idle stretch cannot reset it.
   : > "$sub/state/.wake-queue"
-  out=$(run_stall_checkpoint "$dir" "$state" "$sub" 0 7)
+  out=$(run_stall_checkpoint "$dir" "$state" "$sub")
   if grep -F 'secondmate wake-loop stalled' "$out" >/dev/null 2>&1; then
     fail "an emptied queue produced a stall notification"
   fi
