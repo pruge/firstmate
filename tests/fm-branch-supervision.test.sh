@@ -48,6 +48,15 @@ test_branch_prompt_is_byte_stable_and_above_cache_floor() {
     *"stuck-crewmate-recovery"*) ;;
     *) fail "branch prompt lost the inlined recovery playbook" ;;
   esac
+  # The verdict criteria must cover a role-limited outcome only MAIN can
+  # finish (a PR ready to merge, a local-only landing ready to approve, a
+  # new task that needs spawning): reporting one of these routine would
+  # leave it done by nobody, since the branch cannot act and routine never
+  # wakes MAIN.
+  case "$out_a" in
+    *"only MAIN can finish"*"PR ready to merge"*"routine never wakes MAIN"*) ;;
+    *) fail "branch prompt lost the role-limited actionable-outcome verdict criterion" ;;
+  esac
   pass "branch prompt is byte-stable across homes, cwd, timezone, and time, above the cache floor"
 }
 
