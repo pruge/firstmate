@@ -57,12 +57,8 @@
 #   <p> grep <pattern> [path]  text search for what the index cannot see -
 #                              comments, prose, config, generated files
 #   <p> read <path>            print a file with line numbers
-#   <p> next                   the plan board's stage-one ticket, passed through
-#                              verbatim from the gootte CLI. KNOWN LIMIT: the
-#                              gootte CLI still reports already-finished tickets
-#                              as next (only its backend joins backlog status),
-#                              so check the backlog before trusting the answer;
-#                              delete this line once gootte fixes its join.
+#   <p> next                   the plan board stage-one ticket, passed through
+#                              verbatim from the gootte CLI
 #
 # The index answers STRUCTURE questions (who calls this, what breaks if I change
 # it). It does not answer text questions: comments, documentation, configuration
