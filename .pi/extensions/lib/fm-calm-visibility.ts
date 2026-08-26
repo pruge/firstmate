@@ -29,14 +29,14 @@ export const CALM_TRANSCRIPT_CLASSES = [
 
 export type CalmTranscriptClass = (typeof CALM_TRANSCRIPT_CLASSES)[number];
 
-// Calm is on or off. "assistant-working-note" is deliberately present in the allowlist:
-// a message ending in toolUse often carries the assistant's genuine reply to the captain,
-// so hiding the class erased real answers. Calm shows these rows and accepts the
-// captain-approved tradeoff that narration between tool calls stays visible too.
+// Calm is on or off. "assistant-working-note" is deliberately absent from the
+// allowlist so narration between tool calls stays quiet again. The layout adapter
+// (fm-calm-assistant-layout.ts) owns the one exception: a mid-turn note that addresses
+// the captain anywhere in its text is never hidden, because such a note frequently
+// carries the assistant's genuine reply.
 const CALM_VISIBLE_CLASSES = new Set<CalmTranscriptClass>([
   "genuine-user-prompt",
   "genuine-agent-response",
-  "assistant-working-note",
   "working-status",
 ]);
 

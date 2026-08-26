@@ -14,9 +14,10 @@ A fresh Pi session or new Calm extension lifetime starts at the normal initial p
 Very narrow terminals fall back to a smaller deterministic sprite.
 While Calm is off, Pi's stock working row is left exactly as Pi renders it.
 Calm hides collapsed thinking labels, the shells for the Pi built-in tool names Calm owns, the `fm_watch_arm_pi` tool shell, and canonically classified Firstmate operational user rows.
-Calm keeps mid-turn assistant working notes visible.
+Calm hides mid-turn assistant working notes again, with one exception: a note that addresses the captain anywhere in its text is never hidden.
 A mid-turn working note is assistant text in a message the model did not end its response with, identified by that message's own `stopReason` of `toolUse`, or of `length` with tool calls present.
-It stays visible because such a message frequently carries the assistant's genuine reply to the captain, so hiding the whole class erased real answers; the captain-accepted tradeoff is that narration between tool calls remains on screen too.
+The address is matched case-insensitively anywhere in the note (`Captain`, `captain`, mixed case, or `캡틴`), not only at the start: firstmate's instructions require addressing the captain at least once per response but not as the first word, so a leading-only rule would re-create the incident where a genuine reply addressed in a later sentence vanished from the screen.
+Matching anywhere errs toward showing, which is the safe side of that invariant; unaddressed narration between tool calls still hides.
 Still-streaming text is likewise never suppressed, because suppressing it would also stop a genuine reply from streaming.
 The operational inputs remain ordinary user-role messages, while Pi's transcript layout renders their complete rows at zero height.
 The session-start nudge remains on its existing non-displayed custom-message path.

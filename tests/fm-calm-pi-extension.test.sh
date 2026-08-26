@@ -807,7 +807,6 @@ for (const itemClass of visibility.CALM_TRANSCRIPT_CLASSES) {
   const expected =
     itemClass === "genuine-user-prompt" ||
     itemClass === "genuine-agent-response" ||
-    itemClass === "assistant-working-note" ||
     itemClass === "working-status";
   if (visible !== expected) {
     throw new Error(`Calm allowlist classified ${itemClass} as visible=${visible}`);
@@ -1470,6 +1469,31 @@ const messages = {
     stopReason: "toolUse",
     content: [{ type: "text", text: "MIDTURN_WORKING_NOTE" }, toolCall],
   },
+  // Mid-turn notes that address the captain carry the genuine reply, so Calm keeps
+  // them visible wherever the address appears and however it is cased or written.
+  midTurnCaptain: {
+    ...assistantBase,
+    stopReason: "toolUse",
+    content: [{ type: "text", text: "Captain, MIDTURN_CAPTAIN_NOTE" }, toolCall],
+  },
+  midTurnCaptainLate: {
+    ...assistantBase,
+    stopReason: "toolUse",
+    content: [
+      { type: "text", text: "MIDTURN_LATE_NOTE first sentence. And the answer for Captain follows later." },
+      toolCall,
+    ],
+  },
+  midTurnCaptainKorean: {
+    ...assistantBase,
+    stopReason: "toolUse",
+    content: [{ type: "text", text: "캡틴, MIDTURN_KOREAN_NOTE" }, toolCall],
+  },
+  midTurnCaptainMixedCase: {
+    ...assistantBase,
+    stopReason: "toolUse",
+    content: [{ type: "text", text: "cApTaIn, MIDTURN_MIXED_CASE_NOTE" }, toolCall],
+  },
   // The genuine reply that ends a response, which Calm never hides.
   finalReply: {
     ...assistantBase,
@@ -1513,6 +1537,11 @@ const requireVisible = (name, needle, context) => {
     throw new Error(`${context}: ${name} lost ${needle}`);
   }
 };
+const requireHidden = (name, needle, context) => {
+  if (renderedText(name).includes(needle)) {
+    throw new Error(`${context}: ${name} leaked ${needle}`);
+  }
+};
 
 let calm = await loadCalmExtension();
 if (calm.registeredTools.length !== 0) {
@@ -1529,13 +1558,17 @@ await calm.calmCommand.handler("", context);
 if (readFileSync(calmPreferencePath, "utf8") !== "on\n") {
   throw new Error("plain /calm from off did not persist on");
 }
-requireVisible("midTurn", "MIDTURN_WORKING_NOTE", "Calm on");
-requireVisible("truncatedMidTurn", "TRUNCATED_MIDTURN_NOTE", "Calm on");
+requireHidden("midTurn", "MIDTURN_WORKING_NOTE", "Calm on");
+requireHidden("truncatedMidTurn", "TRUNCATED_MIDTURN_NOTE", "Calm on");
 // Pi owns the wording of its truncation notice; Calm must leave that row's own notice
 // standing rather than collapsing an incomplete response to nothing.
 if (rendered("truncatedMidTurn").length === 0) {
   throw new Error("Calm on removed Pi's own truncation notice with the working note");
 }
+requireVisible("midTurnCaptain", "MIDTURN_CAPTAIN_NOTE", "Calm on");
+requireVisible("midTurnCaptainLate", "MIDTURN_LATE_NOTE", "Calm on");
+requireVisible("midTurnCaptainKorean", "MIDTURN_KOREAN_NOTE", "Calm on");
+requireVisible("midTurnCaptainMixedCase", "MIDTURN_MIXED_CASE_NOTE", "Calm on");
 requireVisible("streaming", "STREAMING_NOTE_TEXT", "Calm on");
 requireVisible("truncatedFinal", "TRUNCATED_FINAL_TEXT", "Calm on");
 requireVisible("finalReply", "FINAL_REPLY_TEXT", "Calm on");
@@ -1563,7 +1596,7 @@ await calm.calmCommand.handler("  MaX  ", context);
 if (readFileSync(calmPreferencePath, "utf8") !== "on\n") {
   throw new Error("a spaced, mixed-case argument did not fall through to the plain toggle");
 }
-requireVisible("midTurn", "MIDTURN_WORKING_NOTE", "Calm on after a spaced, mixed-case argument");
+requireHidden("midTurn", "MIDTURN_WORKING_NOTE", "Calm on after a spaced, mixed-case argument");
 await calm.calmCommand.handler("unrecognized", context);
 if (readFileSync(calmPreferencePath, "utf8") !== "off\n") {
   throw new Error("an unrecognized /calm argument did not fall back to the plain toggle");
@@ -1586,7 +1619,7 @@ for (const persisted of ["on\n", "max\n", "max"]) {
   }
   for (const reason of ["startup", "resume", "new", "fork", "reload"]) {
     await calm.sessionStart({ reason }, context);
-    requireVisible(
+    requireHidden(
       "midTurn",
       "MIDTURN_WORKING_NOTE",
       `a ${reason} session restored from ${JSON.stringify(persisted)}`,
@@ -1609,7 +1642,7 @@ JS
   out=$(cat "$output_file")
   [ "$status" -eq 0 ] || fail "Pi calm mid-turn contract failed: $out"
   [ -z "$out" ] || fail "Pi calm mid-turn test printed output: $out"
-  pass "Pi calm keeps mid-turn assistant working notes visible while Calm off renders them identically, leaves streaming, truncated-final, and genuine final replies untouched, never mutates the messages, ignores every /calm argument, and restores a legacy persisted max as ordinary Calm on"
+  pass "Pi calm hides unaddressed mid-turn assistant working notes while Calm on, keeps captain-addressed notes visible wherever the address appears, renders Calm off identically, leaves streaming, truncated-final, and genuine final replies untouched, never mutates the messages, ignores every /calm argument, and restores a legacy persisted max as ordinary Calm on"
 }
 
 test_operational_followup_turn_e2e() {
@@ -3314,6 +3347,7 @@ TS
 {"type":"message","id":"a0000014","parentId":"a0000013","timestamp":"$now","message":{"role":"user","content":[{"type":"text","text":"Ordinary captain text before \u2063FIRSTMATE_OP: v1 watcher: EMBEDDED_CURRENT_NEAR_MISS"}],"timestamp":14}}
 {"type":"message","id":"a0000015","parentId":"a0000014","timestamp":"$now","message":{"role":"user","content":[{"type":"text","text":"\u2063ordinary captain text after unrelated separator"}],"timestamp":15}}
 {"type":"message","id":"a0000016","parentId":"a0000015","timestamp":"$now","message":{"role":"assistant","content":[{"type":"text","text":"The deterministic tool example is complete."}],"api":"anthropic-messages","provider":"anthropic","model":"claude-sonnet-4-5","usage":{"input":2,"output":1,"cacheRead":0,"cacheWrite":0,"totalTokens":3,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":16}}
+{"type":"message","id":"a0000017","parentId":"a0000016","timestamp":"$now","message":{"role":"assistant","content":[{"type":"text","text":"Captain, CAPTAIN_ADDRESSED_MIDTURN_NOTE"},{"type":"toolCall","id":"call_calm_e2e_addressed","name":"bash","arguments":{"command":"printf 'CALM_E2E_OUTPUT\\n'"}}],"api":"anthropic-messages","provider":"anthropic","model":"claude-sonnet-4-5","usage":{"input":2,"output":1,"cacheRead":0,"cacheWrite":0,"totalTokens":3,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"toolUse","timestamp":17}}
 JSON
 
   tmux -L "$TMUX_SOCKET" new-session -d -s "$TMUX_SESSION" -x 180 -y 44 \
@@ -3390,9 +3424,11 @@ JSON
   do
     assert_contains "$(cat "$hidden_snapshot")" "$near_miss" "/calm hid the genuine operational near miss $near_miss"
   done
-  # Mid-turn narration emitted alongside the tool call is a working note, which Calm
-  # keeps visible by deliberate policy; the genuine reply that ended the response stays too.
-  assert_contains "$(cat "$hidden_snapshot")" "I will run one command." "/calm removed a mid-turn assistant working note from the transcript"
+  # Unaddressed mid-turn narration emitted alongside the tool call is a hidden working
+  # note under the captain-address policy, while an addressed mid-turn note carries the
+  # genuine reply and stays visible; the genuine reply that ended the response stays too.
+  assert_not_contains "$(cat "$hidden_snapshot")" "I will run one command." "/calm left an unaddressed mid-turn assistant working note in the transcript"
+  assert_contains "$(cat "$hidden_snapshot")" "CAPTAIN_ADDRESSED_MIDTURN_NOTE" "/calm hid a captain-addressed mid-turn assistant working note"
   assert_contains "$(cat "$hidden_snapshot")" "The deterministic tool example is complete." "/calm removed assistant conversation after a tool"
 
   tmux -L "$TMUX_SOCKET" send-keys -t "$TMUX_SESSION" -l "/calm-diagnostic-e2e"
@@ -3569,8 +3605,8 @@ JS
     "/export left a synthetic Firstmate user-role presentation in the Calm transcript"
   assert_not_contains "$(cat "$export_settled_snapshot")" "Thinking..." \
     "/export left collapsed thinking labels in the Calm transcript"
-  assert_contains "$(cat "$export_settled_snapshot")" "I will run one command." \
-    "/export dropped a mid-turn assistant working note from the Calm transcript"
+  assert_not_contains "$(cat "$export_settled_snapshot")" "I will run one command." "/export left an unaddressed mid-turn assistant working note in the Calm transcript"
+  assert_contains "$(cat "$export_settled_snapshot")" "CAPTAIN_ADDRESSED_MIDTURN_NOTE" "/export dropped a captain-addressed mid-turn assistant working note from the Calm transcript"
   for hidden in \
     CURRENT_WATCHER_E2E \
     CURRENT_TURN_END_E2E \
@@ -3607,7 +3643,8 @@ JS
   assert_contains "$(cat "$restored_snapshot")" " Error:" "second /calm dropped the synthetic delivery diagnostic"
   assert_not_contains "$(cat "$restored_snapshot")" "Navigated to selected point" "second /calm added a navigation status row"
   assert_contains "$(cat "$restored_snapshot")" "Thinking..." "second /calm did not restore Pi's collapsed thinking labels"
-  assert_contains "$(cat "$restored_snapshot")" "I will run one command." "second /calm did not restore the mid-turn assistant working note"
+  assert_contains "$(cat "$restored_snapshot")" "I will run one command." "second /calm did not restore the unaddressed mid-turn assistant working note"
+  assert_contains "$(cat "$restored_snapshot")" "CAPTAIN_ADDRESSED_MIDTURN_NOTE" "second /calm did not restore the captain-addressed mid-turn note"
   assert_contains "$(cat "$restored_snapshot")" "escape to interrupt" "/calm changed the active Ctrl+O expansion state"
 
   hash_after=$(shasum -a 256 "$session_file" | awk '{print $1}')
