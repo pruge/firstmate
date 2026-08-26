@@ -780,6 +780,44 @@ test_secondmate_marked_request_reporting_contract() {
   pass "fm-brief.sh: marked requests avoid generic acknowledgements and preserve material reporting"
 }
 
+# Hard rule 4 now lets a registered secondmate report its own domain's results
+# directly to the captain in its own window, as long as the same fact also
+# lands in its status file. The charter must carry that addition-not-replacement
+# contract, keep out-of-domain matters routed to the main firstmate, note that
+# a captain-invisible (remote) home keeps the status-only path, and point at
+# AGENTS.md section 9 for phrasing instead of restating it.
+test_secondmate_captain_direct_reporting_contract() {
+  local home brief
+  home="$TMP_ROOT/captain-direct-home"
+  mkdir -p "$home/data"
+  FM_HOME="$home" FM_SECONDMATE_CHARTER='Handle routed domain work.' \
+    "$ROOT/bin/fm-brief.sh" captain-direct --secondmate --no-projects >/dev/null 2>&1
+  brief="$home/data/captain-direct/brief.md"
+
+  assert_grep '# Reporting to the captain' "$brief" \
+    "secondmate charter lost the direct captain-reporting section"
+  assert_grep "report your domain's captain-relevant outcomes directly to the captain in this window" "$brief" \
+    "secondmate charter did not allow direct captain reporting for its own domain"
+  assert_grep 'addition, never a replacement' "$brief" \
+    "secondmate charter lost the addition-not-replacement rule"
+  assert_grep "status line to '$home/state/captain-direct.status'" "$brief" \
+    "secondmate charter's direct-report rule does not name its own status file"
+  assert_grep 'Matters outside your domain' "$brief" \
+    "secondmate charter lost out-of-domain routing to the main firstmate"
+  assert_grep 'if your home runs where the captain cannot see it, keep using only the status path' "$brief" \
+    "secondmate charter lost the captain-invisible (remote) exception"
+  assert_grep "follow section 9 of your local \`AGENTS.md\` for phrasing" "$brief" \
+    "secondmate charter did not point at the captain-facing phrasing rules"
+  # The marked/unmarked distinction and the corr token must survive alongside
+  # the new channel: they are the only way to tell captain intervention from a
+  # firstmate request.
+  assert_grep 'A message with NO marker is the captain typing directly into your pane' "$brief" \
+    "secondmate charter lost the unmarked-captain distinction"
+  assert_grep 'include that exact token in your parent status reply' "$brief" \
+    "secondmate charter lost the corr=<id> correlation rule"
+  pass "fm-brief.sh: second mate reports domain results directly to the captain while keeping the status line"
+}
+
 test_secondmate_directory_paths_are_absolute_and_output_is_stable() {
   local root home data_override state_override brief baseline err status
   root="$TMP_ROOT/relative-directory-inputs"
@@ -989,6 +1027,7 @@ test_test_selection_contract_in_ship_and_scout_briefs
 test_fast_abort_contract_in_ship_and_scout_briefs
 test_secondmate_no_projects_charter
 test_secondmate_marked_request_reporting_contract
+test_secondmate_captain_direct_reporting_contract
 test_secondmate_directory_paths_are_absolute_and_output_is_stable
 test_pause_verb_override_renders_all_brief_scaffolds
 test_scout_and_secondmate_load_decision_hold_policy
