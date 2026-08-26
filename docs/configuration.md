@@ -187,6 +187,21 @@ The flag is per home and is not inherited by secondmate homes, because stow cade
 Only the file's presence is read, so its contents are ignored; remove it to return to the default contract on the next pass.
 The skill text owns the marker spelling, the tick order, and the reinforcement rule.
 
+## Secondmate wake-stall threshold (config/secondmate-wake-stall-secs)
+
+A local secondmate's unhandled wake-queue row produces one durable parent notification only after the mate's resolved stall threshold, resolved fresh on every watcher poll by [`bin/fm-wake-lib.sh`](../bin/fm-wake-lib.sh) in this order:
+
+1. An explicit `FM_SECONDMATE_WAKE_STALL_SECS` environment value wins unchanged (zero or invalid values are ignored).
+2. Otherwise a pinned value from local gitignored `config/secondmate-wake-stall-secs` (one integer, whitespace trimmed; zero or invalid values fall through) fixes this home's threshold and disables adaptation.
+3. With neither set, the threshold adapts per mate to that mate's own observed foreign-row handling latency: twice the worst of its most recent 10 observed latencies, clamped to 60..900 seconds.
+
+The observation records how long a mate took to consume each oldest queue row, durably under `state/.secondmate-wake-stall-latency-<task>`, so learning survives restarts and one slow home never moves another home's threshold.
+With no observations yet the clamp floor applies, which preserves the historical 60-second default until the home has seen its mate's real pace.
+Latency samples above the clamp maximum are discarded so watcher downtime or an already-alerted genuine wedge cannot poison the baseline.
+The clamp bounds themselves have test-only env overrides (`FM_SECONDMATE_WAKE_STALL_MIN_SECS`, `FM_SECONDMATE_WAKE_STALL_MAX_SECS`, `FM_SECONDMATE_WAKE_STALL_FACTOR`, `FM_SECONDMATE_WAKE_STALL_SAMPLES`); leave them unset in operation.
+Because the threshold is re-read from disk every poll, editing the config file or the environment changes behavior from the very next watcher cycle without restarting anything persistent.
+The knob is deliberately not inherited by secondmate homes: it is the primary's view of its direct mates' pace, and a secondmate never watches child crews of its own.
+
 ## Secondmate routes (data/secondmates.md)
 
 Persistent secondmate routes live locally in `data/secondmates.md`.
@@ -709,7 +724,7 @@ FM_CLASSIFY_PAUSED_VERB=paused     # leading status verb for a declared external
 FM_STALE_ESCALATE_SECS=240         # idle seconds before a provably-working stale pane escalates; stale panes whose crew is not provably working surface immediately unless they declare the pause verb
 FM_BUSY_TURN_MAX_SECS=3600         # maximum age of a busy pane's latest state/<id>.turn-ended marker, or its state/<id>.meta spawn record before any turn completes, before the same wedge escalation used for a provably-working non-busy stale takes over; inspection-only, never an automatic interrupt or restart; a declared external wait or verified captain-held transfer takes the FM_PAUSE_RESURFACE_SECS recheck below instead
 FM_PAUSE_RESURFACE_SECS=3600       # seconds before the watcher re-surfaces a declared external wait or verified captain-held transfer for a recheck, including a live busy pane past FM_BUSY_TURN_MAX_SECS; the away-mode daemon uses the same setting for a declared external wait or verified captain-held transfer
-FM_SECONDMATE_WAKE_STALL_SECS=60   # minimum age of the oldest valid foreign wake-queue row before an endpoint-recorded local secondmate produces one durable parent wake-loop-stall notification; zero or invalid values use 60
+FM_SECONDMATE_WAKE_STALL_SECS=60   # explicit top-precedence stall threshold for an endpoint-recorded local secondmate's oldest foreign wake-queue row; absent falls through to config/secondmate-wake-stall-secs, then a per-mate adaptive threshold learned from observed row-consumption latency clamped to 60..900s
 FM_WEDGE_DEMAND_INSPECT_COUNT=3    # consecutive provably-working stale escalations on the same unchanged pane before demand-deep-inspection is added
 FM_WORKTREE_WRITE_PRUNE='.git node_modules .venv venv __pycache__ .mypy_cache .pytest_cache .ruff_cache .tox target dist build .next .cache vendor'   # directory names the wedge detector's task-worktree write probe skips; the default keeps .git out so a supervisor's own read-only git command can never look like crew progress; set it to the empty string to prune nothing, which widens the probe to the whole depth-bounded tree rather than disabling it
 FM_WORKTREE_WRITE_MAXDEPTH=6       # depth that same probe walks below the recorded worktree; it runs only at the moment a wedge escalation would otherwise fire, never on every poll; no probe knob applies to a secondmate, whose recorded worktree is a provisioned home the probe skips entirely
