@@ -43,7 +43,11 @@ Interrogation is done when the frontier is empty: every branch settled or explic
 
 Facts are yours to find, never the captain's to supply.
 When a frontier question needs repository evidence, read the target project clone directly.
-When it needs broader investigation than a quick read, delegate one focused scout instead of asking.
+Find one such fact before the first round: whether the target project keeps standing structural rules, usually numbered invariants.
+Read the project's AGENTS.md and whatever source-of-truth document it points at for them.
+If the project has none, record that and move on - the check ends there and adds no requirement to the flow.
+If it has some, identify which ones the request would touch, by number.
+When a frontier question needs broader investigation than a quick read, delegate one focused scout instead of asking.
 Do not block the whole round on that investigation: only the questions downstream of it wait for the scout's report.
 Only decisions go to the captain: preference, product policy, and trade-offs with genuine alternatives.
 Never spend a round asking something you could look up yourself.
@@ -66,7 +70,7 @@ Write `docs/features/<feature-slug>/grill.md` in the target project clone, besid
 Keep three things in it:
 - a snapshot of the design tree;
 - the round log;
-- the settled decisions.
+- the settled decisions, including which standing project rules the confirmed understanding touches, so the specification stage inherits that check instead of repeating it.
 
 Record terminology cleanups surfaced during grilling there as well.
 Promote them into the project AGENTS.md `Domain terms` section at landing time through that project's normal delivery path.

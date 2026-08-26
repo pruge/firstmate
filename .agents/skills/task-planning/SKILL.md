@@ -209,6 +209,9 @@ Two drafting rules bind every spec:
 
 Preserve project terminology.
 Explicitly record constraints that would otherwise be rediscovered by every crew.
+When the target project keeps standing structural rules, name in `## Decisions` every rule the confirmed understanding touches, by its number in that project, and only those - never the project's whole inventory.
+A project with no standing rules leaves this empty and nothing else in the flow changes.
+Planning that would overturn a standing rule is exactly the trigger for a decision record (ADR) in the project's own decision-record home: it names the rule being overturned, the original reasons for it, which of those still hold, and carries the captain's ruling.
 
 ## 6. Decompose into vertical tickets
 
@@ -273,6 +276,7 @@ The seven structural fields between the slice's identity and its notes are manda
 - `Touched surfaces` carries the concrete file paths, modules, and subsystems expected to change, including every consumer listed above; the spec stays path-free precisely because this field owns paths at ticket level.
 - `Explicitly out of scope` names neighboring surfaces the ticket deliberately leaves alone, so their absence later reads as a decision rather than a blind spot.
 - `Locked decisions` records choices already settled by the captain, grill, or spec, each pointing at where it was settled, so crews implement instead of reopening.
+It also names the numbers of the project's standing rules that bind this specific ticket - only the subset touching this slice, never the whole list.
 - `Evidence anchors` points at the symbols, tests, or fixtures where implementation and verification start.
 - `Regression guards` names the existing tests or checks covering the touched surfaces that must keep passing.
 
