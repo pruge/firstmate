@@ -982,6 +982,51 @@ test_scout_and_secondmate_load_decision_hold_policy() {
   pass "fm-brief.sh: investigation and visual-review completions load the shared decision policy"
 }
 
+# A worker that redirects or pipes tool output into its status file can bury its
+# terminal verb under a dump, so every crewmate status block forbids that, and a
+# worker that leaves uncommitted changes behind legitimately wedges teardown, so
+# every ship Definition of done requires a clean worktree before done:. Scout
+# worktrees are declared scratch (discardable once the report exists) and a
+# secondmate charter makes no code changes, so neither carries that gate.
+test_status_and_clean_worktree_contracts() {
+  local home id mode brief r1 r4 count
+  home="$TMP_ROOT/hygiene-home"
+  mkdir -p "$home/data"
+  r1="never redirect or pipe command output into the status file"
+  r4="your worktree must be clean"
+
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    "$ROOT/bin/fm-brief.sh" brief-hygiene-scout alpha --scout >/dev/null 2>&1
+  brief="$home/data/brief-hygiene-scout/brief.md"
+  assert_grep "$r1" "$brief" "scout brief missing the no-tool-output-in-status rule"
+  count=$(grep -cF -- "$r1" "$brief")
+  [ "$count" -eq 1 ] || fail "scout brief should carry the status rule exactly once, got $count"
+  assert_no_grep "$r4" "$brief" \
+    "scout brief must not require a clean worktree (its worktree is declared scratch)"
+
+  for id_mode in "brief-hygiene-nm:no-mistakes" "brief-hygiene-dp:direct-PR" "brief-hygiene-lo:local-only"; do
+    id=${id_mode%%:*}
+    mode=${id_mode##*:}
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode "$mode" >/dev/null 2>&1
+    brief="$home/data/$id/brief.md"
+    assert_present "$brief" "$mode hygiene brief was not scaffolded"
+    assert_grep "$r1" "$brief" "$mode brief missing the no-tool-output-in-status rule"
+    count=$(grep -cF -- "$r1" "$brief")
+    [ "$count" -eq 1 ] || fail "$mode brief should carry the status rule exactly once, got $count"
+    assert_grep "$r4" "$brief" "$mode brief missing the pre-done clean-worktree gate"
+    # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+    assert_grep '`git status --short`' "$brief" \
+      "$mode brief missing the clean-worktree check command"
+  done
+
+  FM_SECONDMATE_CHARTER='hygiene reviews' \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    "$ROOT/bin/fm-brief.sh" brief-hygiene-mate --secondmate --no-projects >/dev/null 2>&1
+  assert_no_grep "$r4" "$home/data/brief-hygiene-mate/brief.md" \
+    "secondmate charter must not require a clean worktree (it writes no project code)"
+  pass "fm-brief.sh: status lines stay hand-written and ship done requires a clean worktree"
+}
+
 # Scout and secondmate paths still scaffold well-formed briefs.
 test_scout_and_secondmate_scaffold() {
   local brief
@@ -1030,5 +1075,6 @@ test_secondmate_marked_request_reporting_contract
 test_secondmate_captain_direct_reporting_contract
 test_secondmate_directory_paths_are_absolute_and_output_is_stable
 test_pause_verb_override_renders_all_brief_scaffolds
+test_status_and_clean_worktree_contracts
 test_scout_and_secondmate_load_decision_hold_policy
 test_scout_and_secondmate_scaffold
