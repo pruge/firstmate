@@ -57,6 +57,8 @@
 #   <p> grep <pattern> [path]  text search for what the index cannot see -
 #                              comments, prose, config, generated files
 #   <p> read <path>            print a file with line numbers
+#   <p> next                   the plan board stage-one ticket, passed through
+#                              verbatim from the gootte CLI
 #
 # The index answers STRUCTURE questions (who calls this, what breaks if I change
 # it). It does not answer text questions: comments, documentation, configuration
@@ -197,6 +199,37 @@ cmd_read() {
   nl -ba -w6 -s'  ' "$target"
 }
 
+# The plan-board read. Like grep and read, this is not a structural question,
+# so it deliberately does NOT touch the index. The gootte CLI resolves project
+# names from its working directory plus ~/Documents/ai2/projects only (its
+# GOOTTE_ROOTS is backend-only), so the invocation MUST run from the projects
+# root; this was verified live on 2026-08-26 and any other shape answers
+# "project not found" for a registered project.
+cmd_next() {
+  local plan_name=$1 gootte web entry
+  # The gootte repo location comes from the same resolution order as any other
+  # project ($FM_PROJECT_ROOT -> caller's checkout -> $FM_HOME/projects); never
+  # hard-code its path here.
+  gootte=$(resolve_project gootte)
+  web="$gootte/code/web"
+  entry="$web/cli/src/main.ts"
+  [ -f "$entry" ] || die "the gootte CLI is missing at $entry; the gootte clone at $gootte does not have the expected code/web layout"
+  command -v npx >/dev/null 2>&1 || die "npx is not installed; it is how this verb runs the gootte CLI"
+  local projects_dir="$FM_HOME/projects"
+  [ -d "$projects_dir" ] || die "no projects directory to resolve plan names from: $projects_dir"
+  local tmp rc=0 out
+  tmp=$(mktemp) || die "could not create a temp file"
+  (cd "$projects_dir" && npx --prefix "$web" tsx "$entry" next "$plan_name") >"$tmp" 2>&1 || rc=$?
+  out=$(grep -v '^npm notice ' "$tmp" || true)
+  rm -f "$tmp"
+  if [ "$rc" -ne 0 ]; then
+    printf '%s\n' "$out" >&2
+    die "gootte next failed with exit $rc; its output is above"
+  fi
+  [ -n "$out" ] || die "gootte next succeeded but printed nothing after noise filtering; treat this as a gootte fault, not an empty queue"
+  printf '%s\n' "$out"
+}
+
 cmd_status() {
   local dir=$1
   echo "path:   $dir"
@@ -250,6 +283,7 @@ main() {
       codegraph affected -p "$dir" "$@"
       ;;
     grep) cmd_grep "$dir" "$@" ;;
+    next) cmd_next "$name" ;;
     read)
       [ "$#" -ge 1 ] || die "read needs a path"
       cmd_read "$dir" "$1"

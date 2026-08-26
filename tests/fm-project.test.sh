@@ -167,6 +167,53 @@ case "$out" in
 esac
 pass "text search reads the files, not the index"
 
+# --- the plan-board read stays out of the index and passes gootte through ---
+#
+# `next` is a door to the gootte CLI, not a structural question, so it must
+# never invoke codegraph. The CLI itself is stubbed here because these
+# assertions are about this script's own plumbing: pass-through verbatim,
+# npm-notice noise filtered out, loud refusal when the door's prerequisites
+# are missing.
+GOOT="$HOME_DIR/projects/gootte"
+fm_git_init_commit "$GOOT"
+mkdir -p "$GOOT/code/web/cli/src"
+printf 'console.log("entry");\n' > "$GOOT/code/web/cli/src/main.ts"
+cat > "$FAKEBIN/npx" <<'SH'
+#!/usr/bin/env bash
+# Args: --prefix <web> tsx <entry> next <project...>. The subcommand must be
+# present or the real gootte CLI prints usage and fails.
+[ "$5" = "next" ] || { echo "stub: missing next subcommand; got: $*" >&2; exit 1; }
+echo "npm notice run npx"
+echo "npm notice run 'tsx'"
+printf 'feat/T01\tdo the thing\n'
+exit 0
+SH
+chmod +x "$FAKEBIN/npx"
+
+: > "$CALLS"
+out=$(run alpha next 2>/dev/null) || fail "next verb failed"
+[ "$out" = "feat/T01	do the thing" ] \
+  || fail "next did not pass the plan answer through verbatim; got: $out"
+case "$out" in *npm*) fail "npm notice leaked into next's output" ;; esac
+pass "the plan read passes gootte's answer through without npm noise"
+
+[ -s "$CALLS" ] \
+  && fail "next touched an index; calls were: $(cat "$CALLS")"
+pass "the plan read never refreshes or reads the index"
+
+mv "$GOOT" "$TMP_ROOT/gootte-away"
+run alpha next >/dev/null 2>&1 \
+  && fail "next was answered without a gootte clone instead of refusing"
+out=$(run alpha next 2>&1 >/dev/null || true)
+case "$out" in *gootte*) ;; *) fail "missing gootte clone refused without naming gootte; got: $out" ;; esac
+mv "$TMP_ROOT/gootte-away" "$GOOT"
+pass "a missing gootte clone is a loud refusal, not a silent empty answer"
+
+# A PATH with no npx at all - not even the stub above - must be refused by name.
+out=$(PATH="/usr/bin:/bin" FM_HOME="$HOME_DIR" "$SCRIPT" alpha next 2>&1 >/dev/null || true)
+case "$out" in *npx*) ;; *) fail "a missing npx refused without naming npx; got: $out" ;; esac
+pass "a missing runner is refused by name"
+
 # --- reading a file stays inside the project --------------------------------
 
 run alpha read ../../../etc/passwd >/dev/null 2>&1 \
@@ -188,3 +235,9 @@ case "$out" in
   *) fail "list did not show the registered projects" ;;
 esac
 pass "list shows the registered projects"
+
+# --- unknown verbs stay refused ----------------------------------------------
+
+run alpha frobnicate >/dev/null 2>&1 \
+  && fail "an unknown verb was accepted"
+pass "an unknown verb is refused"
