@@ -2,8 +2,8 @@
 // updateContent method. installCalmAssistantLayout() probes that exact method and throws
 // if it is missing; fm-calm.ts catches that and skips only this adapter with a diagnostic
 // instead of blocking Calm or Pi.
-// This layout removes collapsed thinking and the mid-turn assistant text blocks
-// classified as "assistant-working-note" from a shallow presentation copy. The message
+// This layout removes collapsed thinking and any assistant text whose class Calm is
+// currently hiding from a shallow presentation copy. The message
 // itself, model context, session storage, and export rendering are never touched.
 // ./fm-calm-visibility.ts owns which classes Calm hides.
 import type { AssistantMessageComponent as PiAssistantMessageComponent } from "@earendil-works/pi-coding-agent";
@@ -27,8 +27,8 @@ type CalmAssistantLayoutPatch = {
 // agent loop runs its tool calls and then issues another assistant message. stopReason
 // is intrinsic to each message and is already set while the message streams, so this
 // layout never has to ask whether the turn ended. It stays "pending" until the tool
-// call materializes, which is why a working note is briefly visible before it
-// collapses; suppressing pending text would also stop a genuine reply from streaming.
+// call materializes; pending text is never treated as mid-turn, because suppressing
+// it would also stop a genuine reply from streaming.
 function isMidTurnAssistantMessage(message: AssistantMessage): boolean {
   if (message.stopReason === "toolUse") return true;
   return (

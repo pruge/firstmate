@@ -807,6 +807,7 @@ for (const itemClass of visibility.CALM_TRANSCRIPT_CLASSES) {
   const expected =
     itemClass === "genuine-user-prompt" ||
     itemClass === "genuine-agent-response" ||
+    itemClass === "assistant-working-note" ||
     itemClass === "working-status";
   if (visible !== expected) {
     throw new Error(`Calm allowlist classified ${itemClass} as visible=${visible}`);
@@ -1512,11 +1513,6 @@ const requireVisible = (name, needle, context) => {
     throw new Error(`${context}: ${name} lost ${needle}`);
   }
 };
-const requireHidden = (name, needle, context) => {
-  if (renderedText(name).includes(needle)) {
-    throw new Error(`${context}: ${name} still rendered ${needle}`);
-  }
-};
 
 let calm = await loadCalmExtension();
 if (calm.registeredTools.length !== 0) {
@@ -1533,10 +1529,8 @@ await calm.calmCommand.handler("", context);
 if (readFileSync(calmPreferencePath, "utf8") !== "on\n") {
   throw new Error("plain /calm from off did not persist on");
 }
-if (rendered("midTurn").length !== 0) {
-  throw new Error(`Calm on left mid-turn working-note rows: ${JSON.stringify(rendered("midTurn"))}`);
-}
-requireHidden("truncatedMidTurn", "TRUNCATED_MIDTURN_NOTE", "Calm on");
+requireVisible("midTurn", "MIDTURN_WORKING_NOTE", "Calm on");
+requireVisible("truncatedMidTurn", "TRUNCATED_MIDTURN_NOTE", "Calm on");
 // Pi owns the wording of its truncation notice; Calm must leave that row's own notice
 // standing rather than collapsing an incomplete response to nothing.
 if (rendered("truncatedMidTurn").length === 0) {
@@ -1566,9 +1560,10 @@ for (const name of Object.keys(rows)) {
   }
 }
 await calm.calmCommand.handler("  MaX  ", context);
-if (readFileSync(calmPreferencePath, "utf8") !== "on\n" || rendered("midTurn").length !== 0) {
+if (readFileSync(calmPreferencePath, "utf8") !== "on\n") {
   throw new Error("a spaced, mixed-case argument did not fall through to the plain toggle");
 }
+requireVisible("midTurn", "MIDTURN_WORKING_NOTE", "Calm on after a spaced, mixed-case argument");
 await calm.calmCommand.handler("unrecognized", context);
 if (readFileSync(calmPreferencePath, "utf8") !== "off\n") {
   throw new Error("an unrecognized /calm argument did not fall back to the plain toggle");
@@ -1591,11 +1586,11 @@ for (const persisted of ["on\n", "max\n", "max"]) {
   }
   for (const reason of ["startup", "resume", "new", "fork", "reload"]) {
     await calm.sessionStart({ reason }, context);
-    if (rendered("midTurn").length !== 0) {
-      throw new Error(
-        `a ${reason} session restored from ${JSON.stringify(persisted)} did not hide mid-turn working notes`,
-      );
-    }
+    requireVisible(
+      "midTurn",
+      "MIDTURN_WORKING_NOTE",
+      `a ${reason} session restored from ${JSON.stringify(persisted)}`,
+    );
     requireVisible("finalReply", "FINAL_REPLY_TEXT", `${reason} session`);
   }
   // A session restored as on toggles to off; one that had wrongly dropped to off would
@@ -1614,7 +1609,7 @@ JS
   out=$(cat "$output_file")
   [ "$status" -eq 0 ] || fail "Pi calm mid-turn contract failed: $out"
   [ -z "$out" ] || fail "Pi calm mid-turn test printed output: $out"
-  pass "Pi calm on collapses mid-turn assistant working notes to zero height while Calm off keeps them, leaves streaming, truncated-final, and genuine final replies untouched, never mutates the messages, ignores every /calm argument, and restores a legacy persisted max as ordinary Calm on"
+  pass "Pi calm keeps mid-turn assistant working notes visible while Calm off renders them identically, leaves streaming, truncated-final, and genuine final replies untouched, never mutates the messages, ignores every /calm argument, and restores a legacy persisted max as ordinary Calm on"
 }
 
 test_operational_followup_turn_e2e() {
@@ -3359,7 +3354,6 @@ JSON
     # on screen through this whole redraw rather than disappearing with it.
     if ! grep -Fq "Thinking..." "$hidden_snapshot" &&
       ! grep -Fq "/calm" "$hidden_snapshot" &&
-      ! grep -Fq "I will run one command." "$hidden_snapshot" &&
       grep -Fq "FIRSTMATE WATCHER WAKE: can you explain this phrase?" "$hidden_snapshot" &&
       grep -Fq "The deterministic tool example is complete." "$hidden_snapshot"; then
       break
@@ -3397,8 +3391,8 @@ JSON
     assert_contains "$(cat "$hidden_snapshot")" "$near_miss" "/calm hid the genuine operational near miss $near_miss"
   done
   # Mid-turn narration emitted alongside the tool call is a working note, which Calm
-  # hides against the real Pi renderer; the genuine reply that ended the response stays.
-  assert_not_contains "$(cat "$hidden_snapshot")" "I will run one command." "/calm left a mid-turn assistant working note in the transcript"
+  # keeps visible by deliberate policy; the genuine reply that ended the response stays too.
+  assert_contains "$(cat "$hidden_snapshot")" "I will run one command." "/calm removed a mid-turn assistant working note from the transcript"
   assert_contains "$(cat "$hidden_snapshot")" "The deterministic tool example is complete." "/calm removed assistant conversation after a tool"
 
   tmux -L "$TMUX_SOCKET" send-keys -t "$TMUX_SESSION" -l "/calm-diagnostic-e2e"
@@ -3575,8 +3569,8 @@ JS
     "/export left a synthetic Firstmate user-role presentation in the Calm transcript"
   assert_not_contains "$(cat "$export_settled_snapshot")" "Thinking..." \
     "/export left collapsed thinking labels in the Calm transcript"
-  assert_not_contains "$(cat "$export_settled_snapshot")" "I will run one command." \
-    "/export left a mid-turn assistant working note in the Calm transcript"
+  assert_contains "$(cat "$export_settled_snapshot")" "I will run one command." \
+    "/export dropped a mid-turn assistant working note from the Calm transcript"
   for hidden in \
     CURRENT_WATCHER_E2E \
     CURRENT_TURN_END_E2E \
