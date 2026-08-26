@@ -37,6 +37,21 @@ function isMidTurnAssistantMessage(message: AssistantMessage): boolean {
   );
 }
 
+// A mid-turn note that addresses the captain is treated as the assistant's genuine
+// reply and never hidden. The address is matched anywhere in the note's text, not just
+// at the start: firstmate's own instructions require addressing the captain at least
+// once per response but not as the first word, so a leading-only rule would re-create
+// the incident where a real answer addressed in its second or third sentence vanished.
+// Case-insensitive substring matching errs toward showing, which is the safe side of
+// this invariant; pure narration between tool calls still carries no address and hides.
+const CAPTAIN_ADDRESS_PATTERN = /캡틴|captain/i;
+
+function addressesTheCaptain(message: AssistantMessage): boolean {
+  return message.content.some(
+    (block) => block.type === "text" && CAPTAIN_ADDRESS_PATTERN.test(block.text),
+  );
+}
+
 // Keep the introduction-version symbol stable so a compatible upgrade cannot
 // double-patch a live process.
 const CALM_ASSISTANT_LAYOUT_PATCH = Symbol.for(
@@ -75,7 +90,9 @@ export function installCalmAssistantLayout(): void {
       state.hideThinkingBlock &&
       patch.hidesThinking();
     const hideWorkingNote =
-      patch.hidesWorkingNote() && isMidTurnAssistantMessage(message);
+      patch.hidesWorkingNote() &&
+      isMidTurnAssistantMessage(message) &&
+      !addressesTheCaptain(message);
     const presentationMessage =
       hideThinking || hideWorkingNote
         ? {
