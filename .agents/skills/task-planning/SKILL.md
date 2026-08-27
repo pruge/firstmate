@@ -314,6 +314,7 @@ Major feedback means a new parent plan through the recursion gate, not an ever-g
 
 Before presenting the plan, check:
 
+- run `bin/fm-ticket-check.sh <feature-dir>` and resolve every reported violation first; the script is the contract's executor, so this section stays the single owner of the rules;
 - every in-scope requirement is covered by one or more tickets;
 - every ticket has an observable acceptance criterion;
 - every ticket has a verification method;
