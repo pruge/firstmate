@@ -49,6 +49,7 @@ import { Box, Container, getKeybindings, type Component } from "@earendil-works/
 import type { TSchema } from "typebox";
 import { installCalmAssistantLayout } from "./lib/fm-calm-assistant-layout.ts";
 import { installCalmOperationalUserLayout } from "./lib/fm-calm-operational-user-layout.ts";
+import { wrapEditPrepareArgumentsWithXmlRecovery } from "./lib/fm-edit-xml-recovery.ts";
 import {
   CALM_WORKING_SHIP_WIDGET_KEY,
   createCalmWorkingShipAnimation,
@@ -319,7 +320,9 @@ export default function (pi: ExtensionAPI) {
   const wrappedBuiltIns: ToolDefinition<any, any, any>[] = [
     wrapBuiltIn(createReadToolDefinition),
     wrapBuiltIn(createBashToolDefinition),
-    wrapBuiltIn(createEditToolDefinition),
+    // XML-tag-style edits recovery composes with Calm's own presentation wrap:
+    // see lib/fm-edit-xml-recovery.ts for why this survives pi package updates.
+    wrapBuiltIn((cwd) => wrapEditPrepareArgumentsWithXmlRecovery(createEditToolDefinition(cwd))),
     wrapBuiltIn(createWriteToolDefinition),
     wrapBuiltIn(createGrepToolDefinition),
     wrapBuiltIn(createFindToolDefinition),
