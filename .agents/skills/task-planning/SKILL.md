@@ -420,14 +420,28 @@ Dispatching an overgrown ticket anyway is precisely the failure this gate exists
 
 After approval, fire the versioning step above, then return to Firstmate's existing execution path.
 
-For each ready ticket:
+**One feature keeps one crew for its whole ticket sequence.**
+Captain order, 2026-08-29 (`data/captain-shared.md` owns the quote and rationale): re-parsing the spec, prior tickets' landed decisions, and the project's structure on every ticket is pure waste when the whole feature already lives in one crew's context.
+Spawn happens exactly ONCE per feature, for its first ready ticket; every later ticket in that graph is delivered to the already-running crew as a steer, never through a fresh `fm-spawn.sh` call.
+
+For the feature's FIRST ready ticket:
 
 1. run the recursion gate;
 2. resolve its concrete delivery mode and yolo posture using the existing Firstmate intake rules;
 3. file the ticket as its own backlog work item and create the normal brief at `data/<parent-id>-t<TNN>/brief.md` by passing the ticket file to `fm-brief.sh --ticket <projects/<project>/docs/features/<feature-slug>/tickets/TNN.md>`, which inserts the ticket body verbatim into the brief's task slot - never re-elaborate, paraphrase, or summarize it - and point at `projects/<project>/docs/features/<feature-slug>/spec.md`;
-4. spawn the existing crewmate using `fm-spawn.sh` and the selected harness/profile;
-5. supervise through the existing lifecycle;
-6. unlock dependent tickets only after their declared predecessor is actually complete; filing tickets as separate backlog items with explicit blocked-by notes lets ordinary queue re-evaluation own this unlocking.
+4. spawn the crewmate using `fm-spawn.sh` and the selected harness/profile;
+5. supervise through the existing lifecycle.
+
+For EVERY LATER ready ticket in the same feature, while its crew is still live and recoverable:
+
+1. run the recursion gate;
+2. file the ticket as its own backlog work item (still `data/<parent-id>-t<TNN>/brief.md` via `fm-brief.sh --ticket`, for tracking and evidence);
+3. steer the SAME crew (`fm-send.sh`) with that ticket's file path and any newly landed context - do not call `fm-spawn.sh` again;
+4. the crew implements exactly that ticket, pushes, opens its PR, and reports to the owning mate rather than going idle;
+5. the mate checks the PR (merging it itself when in scope and green, per the 2026-08-26 merge-authority rule in `data/captain-shared.md`), then steers the same crew with the next ready ticket.
+
+Unlock dependent tickets only after their declared predecessor is actually complete; filing tickets as separate backlog items with explicit blocked-by notes lets ordinary queue re-evaluation own this unlocking.
+Teardown that crew and start a fresh one only when the feature's whole ticket graph is done (the terminal captain-review ticket lands), or when the crew is genuinely unrecoverable (stuck, wedged, or the captain orders a restart) - never as the routine step between two ordinary tickets of the same feature.
 
 The parent task id owns the plan artifacts; each ticket is an ordinary task whose id is `<parent-id>-t<TNN>` (valid per `fm_task_id_creation_valid`), so teardown, supervision, and merge authority apply per ticket unchanged.
 The terminal captain-review ticket files and dispatches like any other ticket once its blockers complete.
