@@ -381,7 +381,9 @@ FM_PROJECT_HELPER=$(shell_quote "$FM_ROOT/bin/fm-project.sh")
 # shellcheck disable=SC2016  # single quotes are deliberate: backtick-wrapped command names must reach the reading agent verbatim, not expand at scaffold time; only the '"$FM_PROJECT_HELPER"' and '"$REPO"' break-outs interpolate.
 CODEGRAPH_SECTION=$(printf '%s\n' \
 '# Reading this codebase' \
-'Read structure through the project door, never by calling `codegraph` directly:' \
+'Skip this whole section when the task asks no structural question - a build, a dependency bump, a config or document edit, or running an existing suite. Say so in one line and use ordinary tools; the report below is then not owed either.' \
+'' \
+'Otherwise read structure through the project door, never by calling `codegraph` directly:' \
 '' \
 '    PROJECT='"$FM_PROJECT_HELPER"' && P() { "$PROJECT" '"$REPO"' "$@"; }' \
 '' \
